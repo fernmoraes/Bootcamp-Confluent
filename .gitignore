@@ -1,0 +1,32 @@
+# Renomeie este arquivo para .gitignore (mv gitignore.template .gitignore)
+
+# Secrets e variáveis locais
+.env
+.env.*
+!.env.example
+
+# Estado local gerado pelo setup.sh (IDs, API keys, credenciais)
+.state
+.state/
+*.state
+state.json
+*.credentials
+credentials.json
+*.key
+*.pem
+
+# Arquivos locais de ferramentas
+.bob/
+.confluent/
+
+# Temporários / SO / editor
+*.log
+tmp/
+.DS_Store
+.idea/
+.vscode/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.neon

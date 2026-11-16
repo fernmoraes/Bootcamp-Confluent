@@ -1,0 +1,41 @@
+# Sub-tarefa 1 — saída de db/03-verify.sql (seed=42)
+# seed.py sha256=5e292bef7dd1aacb62deffb0f1ae95e270bff44532606e908be85c50a873b136
+== wal_level
+ wal_level 
+-----------
+ logical
+
+== contagens (esperado: 200 | 240 | 320 | 60 | 2000)
+ customers | accounts | cards | merchants | transactions 
+-----------+----------+-------+-----------+--------------
+       200 |      240 |   320 |        60 |         2000
+
+== REPLICA IDENTITY (f = FULL)
+    tabela    | replica_identity 
+--------------+------------------
+ accounts     | f
+ cards        | f
+ customers    | f
+ merchants    | f
+ transactions | f
+
+== publication
+   pubname   |                       tabelas                       
+-------------+-----------------------------------------------------
+ desafio_pub | accounts, cards, customers, merchants, transactions
+
+== atributos do cdc_user (sem superuser/createdb/createrole)
+ rolname  | rolcanlogin | rolreplication | rolsuper | rolcreatedb | rolcreaterole 
+----------+-------------+----------------+----------+-------------+---------------
+ cdc_user | t           | t              | f        | f           | f
+
+== rajadas: cartões com 3+ transações em janela de 60 s (esperado: 6 cartões)
+ card_id | max_txns_em_60s |    terceira_txn_em     
+---------+-----------------+------------------------
+     100 |               3 | 2026-10-26 10:14:26+00
+     114 |               3 | 2026-10-19 06:48:17+00
+     228 |               3 | 2026-10-14 14:34:59+00
+     245 |               3 | 2026-10-03 07:52:28+00
+     260 |               5 | 2026-10-26 19:31:07+00
+     320 |               4 | 2026-10-14 01:14:46+00
+
