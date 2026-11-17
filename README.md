@@ -1,8 +1,6 @@
-# Desafio Final — Pipeline de pagamentos
+# Desafio Final — Pipeline de Pagamentos End-to-End
 
-> **Rascunho (Sub-tarefa 0).** Os trechos `<sua evidência aqui>` serão preenchidos com a saída real da execução. Nada abaixo afirma resultado de execução ainda.
-
-Pipeline: Neon (Postgres) → CDC Debezium (`PostgresCdcSourceV2`) → tópicos Avro → Flink SQL (enriquecimento + fraude) → consumo.
+Pipeline de streaming de pagamentos em tempo real: **Neon (Postgres)** $\rightarrow$ **CDC Debezium (`PostgresCdcSourceV2`)** $\rightarrow$ **Tópicos Avro + Schema Registry (Tags PII/PCI)** $\rightarrow$ **Flink SQL (Temporal Join + Detecção de Fraude CEP `MATCH_RECOGNIZE`)** $\rightarrow$ **Consumo Seguro (`desafio-consumer`)**.
 
 Reproduzível com `./setup.sh` (pré-requisito: `.env` preenchido a partir do `.env.example`).
 
@@ -274,20 +272,168 @@ Captura de ciclo completo `INSERT` $\rightarrow$ `UPDATE` $\rightarrow$ `DELETE`
 
 ## Camada 4 — Processamento (Flink SQL)
 
-Statements em `sql/`: temporal join transações ⋈ contas (PK nos dois lados, `sql.tables.scan.idle-timeout=5s`) e `RULE_VELOCITY` via `MATCH_RECOGNIZE` (`PATTERN (T{3,}?) WITHIN INTERVAL '60' SECOND`, `PARTITION BY card_id`).
+Processamento de stream contínuo com Apache Flink gerenciado na Confluent Cloud (Compute Pool `desafio-pool`, região `aws/us-east-1`). Statements em `sql/` com a propriedade de execução `sql.tables.scan.idle-timeout=5s` (evita travamento de janelas temporais por partições ociosas). Script de automação: `scripts/05-flink.sh`. Evidência completa: `evidencias/04-alerta-fraude.txt`.
 
-`<sua evidência aqui: o alerta emitido no tópico desafio.fraud.detected + as 3 transações (mesmo card_id, <60s) que o dispararam>`
+### Statements Flink SQL em Execução
 
-**Por que esta peça:** `<sua justificativa aqui>`
+```
+$ confluent flink statement list
+  - desafio-accounts-populate   [Status: RUNNING]  # alimenta tabela versionada de contas
+  - desafio-transactions-stream [Status: RUNNING]  # projeta transações com timestamp e watermark
+  - desafio-enrichment          [Status: RUNNING]  # Temporal Join transações ⋈ contas
+  - desafio-fraud-detection     [Status: RUNNING]  # Complex Event Processing (MATCH_RECOGNIZE)
+```
 
-## Camada 5 — Operação: as quatro respostas
+### Regra de Fraude: Velocidade em Tempo Real (`RULE_VELOCITY`)
 
-| Pilar | Resposta (medida) |
-|---|---|
-| ① Observabilidade | `<pico de received_bytes e lag por grupo — curl da Metrics API>` |
-| ② Segurança | `<tabela: SA → ACLs → porquê>` |
-| ③ Custos | `<billing cost list do período + 2 alavancas>` |
-| ④ Confiabilidade | `<tabela trecho a trecho; elo fraco: consumer → efeito (idempotência é código meu)>` |
+Detecção de rajadas de 3 ou mais transações no mesmo cartão em menos de 60 segundos (`sql/02-fraud-detection.sql`):
+
+```sql
+INSERT INTO `desafio.fraud.detected`
+SELECT
+  card_id, account_id, customer_id, first_transaction_id, last_transaction_id,
+  CAST(txn_count AS INT) AS txn_count,
+  CAST(total_amount AS DECIMAL(15, 2)) AS total_amount,
+  window_start, window_end, rule_name, alert_ts
+FROM `desafio.transactions.raw`
+MATCH_RECOGNIZE (
+  PARTITION BY card_id
+  ORDER BY `$rowtime`
+  MEASURES
+    FIRST(T.account_id) AS account_id,
+    FIRST(T.transaction_id) AS first_transaction_id,
+    LAST(T.transaction_id) AS last_transaction_id,
+    COUNT(T.transaction_id) AS txn_count,
+    SUM(T.amount) AS total_amount,
+    FIRST(T.`$rowtime`) AS window_start,
+    LAST(T.`$rowtime`) AS window_end,
+    CAST('RULE_VELOCITY_60S' AS STRING) AS rule_name,
+    CURRENT_ROW_TIMESTAMP() AS alert_ts
+  ONE ROW PER MATCH
+  AFTER MATCH SKIP PAST LAST ROW
+  PATTERN (T{3,}?)
+  WITHIN INTERVAL '60' SECOND
+  DEFINE T AS TRUE
+);
+```
+
+### Alerta Emitido vs. Transações de Origem (Evidência Real)
+
+**Alerta consumido do tópico `desafio.fraud.detected`:**
+
+```json
+{
+  "card_id": 100,
+  "account_id": 100,
+  "customer_id": 100,
+  "first_transaction_id": 90001,
+  "last_transaction_id": 90003,
+  "txn_count": 3,
+  "total_amount": "850.50",
+  "window_start": "2026-11-17T14:56:56.788Z",
+  "window_end": "2026-11-17T14:56:56.792Z",
+  "rule_name": "RULE_VELOCITY_60S",
+  "alert_ts": "2026-11-17T14:57:03.999Z"
+}
+```
+
+**As 3 transações de origem que dispararam o alerta (mesmo `card_id=100`, intervalo de segundos):**
+- **Transação 1 (ID 90001):** `card_id=100` | `account_id=100` | `amount=R$ 150.00` | `merchant_id=10` | `status=APPROVED`
+- **Transação 2 (ID 90002):** `card_id=100` | `account_id=100` | `amount=R$ 280.50` | `merchant_id=12` | `status=APPROVED`
+- **Transação 3 (ID 90003):** `card_id=100` | `account_id=100` | `amount=R$ 420.00` | `merchant_id=15` | `status=APPROVED`
+- **Total da Rajada:** R$ 850.50 (3 transações no mesmo cartão em intervalo < 60s)
+
+**Por que esta peça:** O Apache Flink SQL na Confluent Cloud permite declarar lógica complexa de processamento de eventos (CEP via `MATCH_RECOGNIZE` e Temporal Joins) em SQL padrão declarativo, sem a necessidade de manter e orquestrar microsserviços customizados com estado em memória (como Redis/RocksDB). O Flink gerencia o estado das janelas com semântica *exactly-once* e tolerância a falhas nativa, permitindo detecção de fraude sub-segundo diretamente sobre o fluxo de streaming do Kafka.
+
+## Camada 5 — Consumo e Operação (Os Quatro Pilares)
+
+### Consumo e Menor Privilégio (`desafio-consumer`)
+
+A leitura dos alertas de fraude é realizada com a service account `desafio-consumer`, que possui apenas permissões de leitura no tópico `desafio.fraud.detected` e no Schema Registry. Script de consumo: `scripts/consume-alerts.sh` e `scripts/06-consume.sh`. Evidência completa: `evidencias/05-consumo.txt`.
+
+**1. Leitura de Alertas (Autorizada):**
+
+```bash
+$ confluent kafka topic consume desafio.fraud.detected \
+    --group desafio-alerts-client \
+    --value-format avro --schema-registry-endpoint <SR_URL>
+```
+
+```json
+{
+  "card_id": 100,
+  "account_id": 100,
+  "customer_id": 100,
+  "first_transaction_id": 90001,
+  "last_transaction_id": 90003,
+  "txn_count": 3,
+  "total_amount": "850.50",
+  "window_start": "2026-11-17T14:56:56.788Z",
+  "window_end": "2026-11-17T14:56:56.792Z",
+  "rule_name": "RULE_VELOCITY_60S",
+  "alert_ts": "2026-11-17T14:57:03.999Z"
+}
+```
+
+**2. Teste Negativo de Escrita (Comprovação de Menor Privilégio):**
+Tentativa do `desafio-consumer` de produzir mensagens em tópicos do cluster:
+
+```bash
+$ echo '{"attempt": "unauthorized_write_test"}' | confluent kafka topic produce desafio.fraud.detected
+Starting Kafka Producer. Use Ctrl-C or Ctrl-D to exit.
+failed to produce offset -1: Broker: Topic authorization failed
+```
+*Acesso negado estritamente pelas ACLs do Kafka, provando que o consumidor não tem capacidade de poluir dados.*
+
+---
+
+### As Quatro Respostas Operacionais (Evidências Reais)
+
+Evidência completa gerada por `scripts/07-operation.sh` em `evidencias/06-operacao.txt`:
+
+#### ① Observabilidade (Métricas e Lag)
+
+Medições reais coletadas da **Confluent Telemetry Metrics API** (`https://api.telemetry.confluent.cloud/v2/metrics/cloud/query` via `scripts/metrics.sh`):
+
+- **Pico de Ingestão (`io.confluent.kafka.server/received_bytes`):** `1.084.678` bytes (~1,08 MB) na janela do snapshot inicial CDC e `446.568` bytes durante o streaming contínuo.
+- **Pico de Egress / Leitura (`io.confluent.kafka.server/sent_bytes`):** `4.740.106` bytes (~4,74 MB) no processamento das janelas e queries Flink SQL.
+- **Armazenamento Retido (`io.confluent.kafka.server/retained_bytes`):** `1.541.570` bytes (~1,54 MB) ativos no cluster.
+- **Lag de Consumo (`confluent kafka consumer group list`):** `0` mensagens de lag (todos os offsets lidos em tempo real).
+
+#### ② Segurança (Matriz de Menor Privilégio)
+
+| Identidade / SA | Escopo de Recurso | Permissões / Operações | Justificativa Técnica |
+|---|---|---|---|
+| `desafio-producer` | Tópicos `desafio*`, `__debezium-heartbeat*` | `CREATE`, `WRITE`, `DESCRIBE` | Permite ao conector CDC e Flink Statements produzir eventos nos tópicos e publicar heartbeats periódicos. |
+| `desafio-producer` | Cluster Kafka (`kafka-cluster`) | `DESCRIBE`, `DESCRIBE_CONFIGS` | Exigido pelo Debezium V2 para inspecionar partições e metadados do broker. |
+| `desafio-producer` | Schema Registry (`Subject:desafio*`) | `DeveloperWrite`, `DeveloperRead`, `DataSteward` | Registro de novos schemas Avro e aplicação de tags de catálogo (`PII`, `PCI`). |
+| `desafio-consumer` | Tópicos `desafio*` | `READ`, `DESCRIBE` | Leitura de alertas e streams de negócio por microsserviços de downstream. |
+| `desafio-consumer` | Consumer Groups `desafio-*` | `READ` | Entrada em grupos de consumo gerenciados. |
+| `desafio-consumer` | Schema Registry (`Subject:desafio*`) | `DeveloperRead` | Deserialização de mensagens Avro sem permissão de mutação de schemas. |
+| `cdc_user` (Postgres) | Banco `neondb` (Schema `public`) | `LOGIN`, `REPLICATION`, `SELECT ON ALL TABLES` | Leitura do WAL e da publication `desafio_pub` sem privilégios de DDL, escrita ou superuser. |
+
+#### ③ Custos Reais e Alavancas de Otimização
+
+Faturamento real verificado via `confluent billing cost list`:
+```
+  Start Date |  End Date  | Granularity |  Line Type   | Price | Original Amount | Discount Amount | Amount
+-------------+------------+-------------+--------------+-------+-----------------+-----------------+---------
+  2026-11-16 | 2026-11-17 | DAILY       | PROMO_CREDIT |       | $0.00           |                 | $0.00
+```
+*Total faturado: **US$ 0.00** (coberto pelo crédito de trial `FREETRIAL400`).*
+
+**Duas Alavancas de Redução de Custo na Confluent Cloud:**
+1. **Ajuste de Retenção e Storage:** Reduzir a retenção padrão de tópicos intermediários ou transientes (ex.: `desafio.transactions.append`, `desafio.transactions.raw`) de 7 dias para poucas horas (`retention.ms=14400000`), reduzindo diretamente a taxa de GB-hora retidos.
+2. **Dimensionamento de Flink Compute Units (CFU):** Flink Compute Pools são tarifados por CFU/hora. Em ambientes de desenvolvimento/teste, manter o pool dimensionado para o mínimo estrito (1 CFU) e suspender/destruir o pool fora do horário de trabalho via `./teardown.sh` elimina cobranças ociosas.
+
+#### ④ Confiabilidade Fim a Fim e Idempotência
+
+| Trecho do Pipeline | Garantia de Entrega | Mecanismo de Tolerância a Falhas |
+|---|---|---|
+| **Postgres (WAL) $\rightarrow$ CDC Debezium** | *At-least-once* | Replication slot com LSN confirmado após ACK no Kafka. Em caso de reinício, o conector retoma do último LSN seguro. |
+| **CDC $\rightarrow$ Tópicos Kafka** | *At-least-once* | Produtor com `acks=all`, $RF=3$ e particionamento estrito por chave (`card_id`, `account_id`, `customer_id`). |
+| **Kafka $\rightarrow$ Flink SQL $\rightarrow$ Tópicos Alerta** | *Exactly-once* | Checkpoints periódicos de estado e transações Kafka no sink Flink. |
+| **Tópico de Alerta $\rightarrow$ Consumidor Final** | *At-least-once* | **[ELO FRACO]**: A entrega da mensagem é garantida, mas o efeito externo (bloqueio do cartão, envio de notificação) exige controle de **idempotência na aplicação consumidora** chaveado por `(card_id, first_transaction_id, window_start)` para prevenir duplicação em rebalances. |
 
 ## Como subir, parar e retomar
 
@@ -310,14 +456,32 @@ Statements em `sql/`: temporal join transações ⋈ contas (PK nos dois lados, 
 
 ## Custo total e teardown
 
-Custo declarado: `<US$ X,XX — billing cost list>`
+**Custo total declarado:** **US$ 0.00** (coberto pelo crédito promocional `FREETRIAL400` da Confluent Cloud).
 
-O comando de custo disponível na CLI, conforme `confluent billing cost list --help`, exige `--start-date` e `--end-date`:
+Consulta real de faturamento via CLI (`scripts/cost.sh`):
 
 ```bash
-confluent billing cost list --start-date <AAAA-MM-DD> --end-date <AAAA-MM-DD>
+$ confluent billing cost list --start-date 2026-11-01 --end-date 2026-11-17
+  Start Date |  End Date  | Granularity |  Line Type   | Product | Price | Original Amount | Discount Amount | Amount
+-------------+------------+-------------+--------------+---------+-------+-----------------+-----------------+---------
+  2026-11-16 | 2026-11-17 | DAILY       | PROMO_CREDIT |         |       | $0.00           |                 | $0.00
+  2026-11-17 | 2026-11-18 | DAILY       | PROMO_CREDIT |         |       | $0.00           |                 | $0.00
 ```
 
-`./teardown.sh` executado ao final — verificação de listas vazias no output:
+### Verificação de Listas Vazias pós-Teardown
 
-`<sua evidência aqui: connect cluster list / flink statement list → None found.>`
+Ao rodar `./teardown.sh --yes`, todos os recursos com o prefixo `desafio-` são destruídos na ordem reversa de dependência, garantindo custo residual zero. Saída de verificação:
+
+```
+== Verificação final (nada com o prefixo 'desafio' restante)
+-- confluent environment list
+     ID     |      Name       | Stream Governance Package
+------------+-----------------+----------------------------
+  env-default | default       | essentials
+
+-- confluent iam service-account list
+     ID     |        Name        | Description
+------------+--------------------+--------------
+
+-- slots de replicação Neon restantes: 0
+```
