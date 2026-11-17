@@ -87,6 +87,9 @@ if [ -n "$SR_ID" ]; then
     [ -n "$sa" ] && run confluent iam rbac role-binding delete --principal "User:$sa" --role "${pair##*:}" --environment "$ENV_ID" \
         --schema-registry-cluster "$SR_ID" --resource "Subject:${TOPIC_PREFIX}" --prefix --force
   done
+  # DataSteward no environment (criado em 03-schemas.sh)
+  prod_sa="$(confluent iam service-account list -o json 2>/dev/null | jq -r --arg n "$PRODUCER_SA_NAME" '.[]? | select(.name==$n) | .id' | head -1)"
+  [ -n "$prod_sa" ] && run confluent iam rbac role-binding delete --principal "User:$prod_sa" --role DataSteward --environment "$ENV_ID" --force
 fi
 
 # ---------- 4. API keys das service accounts ----------

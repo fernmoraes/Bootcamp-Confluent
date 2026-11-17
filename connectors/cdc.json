@@ -1,0 +1,30 @@
+{
+  "name": "${CONNECTOR_NAME}",
+  "config": {
+    "connector.class": "PostgresCdcSourceV2",
+    "name": "${CONNECTOR_NAME}",
+    "kafka.auth.mode": "KAFKA_API_KEY",
+    "kafka.api.key": "${PRODUCER_KAFKA_KEY}",
+    "kafka.api.secret": "${PRODUCER_KAFKA_SECRET}",
+    "database.hostname": "${PG_HOST}",
+    "database.port": "${PG_PORT}",
+    "database.user": "${CDC_USER}",
+    "database.password": "${CDC_PASSWORD}",
+    "database.dbname": "${PG_DATABASE}",
+    "database.sslmode": "${PG_SSLMODE}",
+    "topic.prefix": "${TOPIC_PREFIX}",
+    "topic.heartbeat.prefix": "${TOPIC_PREFIX}.heartbeat",
+    "table.include.list": "public.customers,public.accounts,public.cards,public.merchants,public.transactions",
+    "output.data.format": "AVRO",
+    "output.key.format": "AVRO",
+    "tasks.max": "1",
+    "slot.name": "desafio_cdc_slot",
+    "plugin.name": "pgoutput",
+    "publication.name": "desafio_pub",
+    "publication.autocreate.mode": "disabled",
+    "heartbeat.interval.ms": "60000",
+    "decimal.handling.mode": "precise",
+    "after.state.only": "false",
+    "tombstones.on.delete": "true"
+  }
+}

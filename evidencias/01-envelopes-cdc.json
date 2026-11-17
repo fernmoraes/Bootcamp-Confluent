@@ -1,0 +1,106 @@
+{
+  "insert_op_c": {
+    "after": {
+      "desafio.public.customers.Value": {
+        "birth_date": 5613,
+        "city": "Curitiba",
+        "created_at": "2026-11-17T13:06:15.207583Z",
+        "customer_id": 9999,
+        "email": "cdc.test@bootcamp.com",
+        "full_name": "CDC Test Customer",
+        "phone": "+5511988887777"
+      }
+    },
+    "before": null,
+    "op": "c",
+    "source": {
+      "connector": "postgresql",
+      "db": "neondb",
+      "lsn": 30483368,
+      "name": "desafio",
+      "schema": "public",
+      "sequence": "[null,\"30483368\"]",
+      "snapshot": "false",
+      "table": "customers",
+      "ts_ms": 1794920775210,
+      "txId": 5130,
+      "version": "3.2.5.Final",
+      "xmin": null
+    },
+    "transaction": null,
+    "ts_ms": 1794920775471
+  },
+  "update_op_u": {
+    "after": {
+      "desafio.public.customers.Value": {
+        "birth_date": 5613,
+        "city": "Florianopolis",
+        "created_at": "2026-11-17T13:06:15.207583Z",
+        "customer_id": 9999,
+        "email": "cdc.updated@bootcamp.com",
+        "full_name": "CDC Test Customer",
+        "phone": "+5511988887777"
+      }
+    },
+    "before": {
+      "desafio.public.customers.Value": {
+        "birth_date": 5613,
+        "city": "Curitiba",
+        "created_at": "2026-11-17T13:06:15.207583Z",
+        "customer_id": 9999,
+        "email": "cdc.test@bootcamp.com",
+        "full_name": "CDC Test Customer",
+        "phone": "+5511988887777"
+      }
+    },
+    "op": "u",
+    "source": {
+      "connector": "postgresql",
+      "db": "neondb",
+      "lsn": 30483632,
+      "name": "desafio",
+      "schema": "public",
+      "sequence": "[\"30483632\",\"30483632\"]",
+      "snapshot": "false",
+      "table": "customers",
+      "ts_ms": 1794920781205,
+      "txId": 5131,
+      "version": "3.2.5.Final",
+      "xmin": null
+    },
+    "transaction": null,
+    "ts_ms": 1794920781375
+  },
+  "delete_op_d": {
+    "after": null,
+    "before": {
+      "desafio.public.customers.Value": {
+        "birth_date": 5613,
+        "city": "Florianopolis",
+        "created_at": "2026-11-17T13:06:15.207583Z",
+        "customer_id": 9999,
+        "email": "cdc.updated@bootcamp.com",
+        "full_name": "CDC Test Customer",
+        "phone": "+5511988887777"
+      }
+    },
+    "op": "d",
+    "source": {
+      "connector": "postgresql",
+      "db": "neondb",
+      "lsn": 30483952,
+      "name": "desafio",
+      "schema": "public",
+      "sequence": "[\"30483952\",\"30483952\"]",
+      "snapshot": "false",
+      "table": "customers",
+      "ts_ms": 1794920787184,
+      "txId": 5132,
+      "version": "3.2.5.Final",
+      "xmin": null
+    },
+    "transaction": null,
+    "ts_ms": 1794920787448
+  },
+  "tombstone": null
+}

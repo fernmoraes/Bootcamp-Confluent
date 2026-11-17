@@ -56,6 +56,7 @@ log "service accounts: $PRODUCER_SA_NAME=$PRODUCER_SA  $CONSUMER_SA_NAME=$CONSUM
 acl() { retry 6 confluent kafka acl create --allow --environment "$ENV_ID" --cluster "$CLUSTER_ID" "$@" >/dev/null; }
 log "ACLs do producer"
 acl --service-account "$PRODUCER_SA" --operations create,write,describe --prefix --topic "$TOPIC_PREFIX"
+acl --service-account "$PRODUCER_SA" --operations create,write,describe --prefix --topic "__debezium-heartbeat"
 acl --service-account "$PRODUCER_SA" --operations describe,describe-configs --cluster-scope   # exigido pelo Debezium V2
 log "ACLs do consumer"
 acl --service-account "$CONSUMER_SA" --operations read,describe --prefix --topic "$TOPIC_PREFIX"

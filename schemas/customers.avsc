@@ -1,0 +1,50 @@
+{
+  "type": "record",
+  "name": "Customer",
+  "namespace": "com.bootcamp.payments.customer",
+  "doc": "Registro canônico de clientes do pipeline de pagamentos",
+  "fields": [
+    {
+      "name": "customer_id",
+      "type": "int",
+      "doc": "Identificador único do cliente (PK)"
+    },
+    {
+      "name": "full_name",
+      "type": "string",
+      "doc": "Nome completo do titular (PII)",
+      "confluent:tags": ["PII"]
+    },
+    {
+      "name": "email",
+      "type": "string",
+      "doc": "Endereço de e-mail (PII)",
+      "confluent:tags": ["PII"]
+    },
+    {
+      "name": "phone",
+      "type": "string",
+      "doc": "Telefone de contato no formato E.164 (PII)",
+      "confluent:tags": ["PII"]
+    },
+    {
+      "name": "birth_date",
+      "type": "string",
+      "doc": "Data de nascimento no formato YYYY-MM-DD (PII)",
+      "confluent:tags": ["PII"]
+    },
+    {
+      "name": "city",
+      "type": "string",
+      "doc": "Cidade de residência"
+    },
+    {
+      "name": "created_at",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Timestamp de cadastro do cliente"
+    }
+  ]
+}

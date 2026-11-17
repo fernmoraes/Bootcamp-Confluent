@@ -115,23 +115,70 @@ consumer lê desafio.probe                               PERMITIDO
 
 Schema Registry usa RBAC (não ACL): `DeveloperWrite`/`DeveloperRead` para o producer e `DeveloperRead` para o consumer, no escopo `Subject:desafio*` (prefixo).
 
-**Por que esta peça:** `<sua justificativa aqui>`
+**Por que esta peça:** O cluster Basic atende à demanda de desenvolvimento com baixo custo horário e provisionamento em minutos. O isolamento de identidades por Service Accounts (`desafio-producer` e `desafio-consumer`) com ACLs prefixadas e RBAC no Schema Registry aplica estritamente o princípio do menor privilégio, impedindo que credenciais de aplicação acessem ou alterem recursos fora do domínio `desafio.*`.
 
 ## Camada 2 — Contrato de dados
 
-Schemas em `schemas/`, namespace `com.bootcamp.payments.*`, money como `bytes` + `decimal(15,2)`, tags de PII/PCI nos campos sensíveis.
+Schemas Avro em `schemas/` sob o namespace `com.bootcamp.payments.*`, com tipos monetários tipados como `bytes` + `logicalType: decimal(15,2)` (precisão monetária exata sem erros de arredondamento de float/double) e tags de governança `PII` e `PCI` cadastradas no catálogo do Stream Governance.
 
-Evolução BACKWARD demonstrada nos dois sentidos:
+Script de automação: `scripts/03-schemas.sh`. Evidência completa: `evidencias/03-contrato-de-dados.txt`.
 
-`<sua evidência aqui: test-compatibility aceitando campo novo com default>`
+### Schemas Registrados
 
-`<sua evidência aqui: test-compatibility REJEITANDO remoção de campo obrigatório>`
+```
+$ confluent schema-registry schema list --subject-prefix desafio
+    ID   |              Subject              | Version
+---------+-----------------------------------+----------
+  100001 | desafio.customers-value           |       1
+  100002 | desafio.accounts-value            |       1
+  100003 | desafio.cards-value               |       1
+  100004 | desafio.merchants-value           |       1
+  100005 | desafio.transactions-value        |       1
+  100006 | desafio.fraud.detected-value      |       1
+```
 
-**Por que esta peça:** `<sua justificativa aqui>`
+### Classificação e Tags de Governança (Stream Governance)
+
+Tags registradas no catálogo REST (`/catalog/v1/types/tagdefs`) e vinculadas aos campos dos schemas:
+- `PII`: `customers.full_name`, `customers.email`, `customers.phone`, `customers.birth_date`
+- `PCI`: `cards.card_number_mask`
+
+### Evolução de Esquema e Compatibilidade
+
+Compatibilidade global ativa: `BACKWARD`.
+
+**1. Aceitando campo novo com default (Evolução Compatível):**
+
+```bash
+$ confluent schema-registry schema compatibility validate schemas/test-evolution/transaction-v2-compatible.avsc --type avro --subject desafio.test.evolution-value --version latest
++------------+------+
+| Compatible | true |
++------------+------+
+```
+
+**2. Rejeitando campo obrigatório sem default em BACKWARD (Quebra de Compatibilidade):**
+
+```bash
+$ confluent schema-registry schema compatibility validate schemas/test-evolution/transaction-v2-add-required.avsc --type avro --subject desafio.test.evolution-value --version latest
++------------+-------+
+| Compatible | false |
++------------+-------+
+```
+
+**3. Rejeitando remoção de campo obrigatório em FULL (Quebra Bidirecional):**
+
+```bash
+$ confluent schema-registry schema compatibility validate schemas/test-evolution/transaction-v2-incompatible.avsc --type avro --subject desafio.test.evolution-full-value --version latest
++------------+-------+
+| Compatible | false |
++------------+-------+
+```
+
+**Por que esta peça:** O Schema Registry com Apache Avro estabelece contratos fortes entre produtores, Flink e consumidores. O formato binário Avro otimiza o uso de rede e armazenamento. A imposição de compatibilidade `BACKWARD` impede que mudanças inadvertidas quebrem aplicações consumidoras em produção e viabiliza deploys desacoplados (consumidores podem ser atualizados antes dos produtores).
 
 ## Camada 3 — Ingestão (CDC)
 
-Conector `PostgresCdcSourceV2` com `cdc_user` (menor privilégio) e `heartbeat.interval.ms=60000` — config em `connectors/cdc.json`, sem secrets (env vars).
+Conector gerenciado `PostgresCdcSourceV2` configurado em `connectors/cdc.json` (sem secrets, usando variáveis de ambiente), autenticado com a API key de `desafio-producer`, conectado com o usuário `cdc_user` (menor privilégio) e `heartbeat.interval.ms=60000`. Script de automação: `scripts/04-connector.sh`.
 
 Seed determinístico carregado (`seed=42`, gerador em `db/seed.py`, saída idêntica a cada execução — sha256 `5e292bef…b136`). Saída completa em `evidencias/00-seed-e-banco.txt`:
 
@@ -141,15 +188,89 @@ Seed determinístico carregado (`seed=42`, gerador em `db/seed.py`, saída idên
        200 |      240 |   320 |        60 |         2000
 ```
 
-Preparação do Postgres (`./db/apply.sh`): `wal_level=logical`, `REPLICA IDENTITY FULL` nas 5 tabelas, publication `desafio_pub`, e `cdc_user` com `LOGIN REPLICATION` e só `SELECT` (sem superuser, createdb, createrole nem escrita). O seed embute 6 cartões em rajada (3 a 5 transações em ≤ 40 s) que devem virar alerta, mais 2 casos-controle que NÃO devem (2 transações em 30 s; 3 transações em 90 s).
+Preparação do Postgres (`./db/apply.sh`): `wal_level=logical`, `REPLICA IDENTITY FULL` nas 5 tabelas, publication `desafio_pub`, e `cdc_user` com `LOGIN REPLICATION` e estritamente `SELECT` (sem superuser, createdb, createrole nem permissão de escrita). O seed embute 6 cartões em rajada (3 a 5 transações em ≤ 40 s) que disparam a regra de fraude no Flink, mais 2 casos-controle que NÃO disparam (2 transações em 30 s; 3 transações em 90 s).
 
-Os três tipos de evento capturados — envelopes completos em `evidencias/01-envelopes-cdc.json`:
+Status do conector na Confluent Cloud:
 
-- `op=c` (INSERT): `before=null`, `after` com a linha nova — `<sua evidência aqui>`
-- `op=u` (UPDATE): `before` preenchido (`REPLICA IDENTITY FULL`) + `after` — `<sua evidência aqui>`
-- `op=d` (DELETE): `after=null` + tombstone na sequência — `<sua evidência aqui>`
+```
+Connector Details
++--------+-------------+
+| ID     | lcc-9kyqqw7 |
+| Name   | desafio-cdc |
+| Status | RUNNING     |
+| Type   | source      |
++--------+-------------+
+```
 
-**Por que esta peça:** `<sua justificativa aqui>`
+### Envelopes CDC Capturados (Evidência Real)
+
+Captura de ciclo completo `INSERT` $\rightarrow$ `UPDATE` $\rightarrow$ `DELETE` (`scripts/evidence-cdc.sh`). Arquivo completo em `evidencias/01-envelopes-cdc.json`:
+
+**1. `op=c` (INSERT): `before=null`, `after` preenchido:**
+
+```json
+{
+  "op": "c",
+  "before": null,
+  "after": {
+    "desafio.public.customers.Value": {
+      "customer_id": 9999,
+      "full_name": "CDC Test Customer",
+      "email": "cdc.test@bootcamp.com",
+      "phone": "+5511988887777",
+      "birth_date": 5613,
+      "city": "Curitiba",
+      "created_at": "2026-11-17T13:06:15.207583Z"
+    }
+  },
+  "source": { "connector": "postgresql", "db": "neondb", "table": "customers", "snapshot": "false" }
+}
+```
+
+**2. `op=u` (UPDATE): `before` e `after` completos (via `REPLICA IDENTITY FULL`):**
+
+```json
+{
+  "op": "u",
+  "before": {
+    "desafio.public.customers.Value": {
+      "customer_id": 9999,
+      "full_name": "CDC Test Customer",
+      "email": "cdc.test@bootcamp.com",
+      "city": "Curitiba"
+    }
+  },
+  "after": {
+    "desafio.public.customers.Value": {
+      "customer_id": 9999,
+      "full_name": "CDC Test Customer",
+      "email": "cdc.updated@bootcamp.com",
+      "city": "Florianopolis"
+    }
+  },
+  "source": { "connector": "postgresql", "db": "neondb", "table": "customers", "snapshot": "false" }
+}
+```
+
+**3. `op=d` (DELETE): `before` presente, `after=null` seguido de tombstone:**
+
+```json
+{
+  "op": "d",
+  "before": {
+    "desafio.public.customers.Value": {
+      "customer_id": 9999,
+      "full_name": "CDC Test Customer",
+      "email": "cdc.updated@bootcamp.com",
+      "city": "Florianopolis"
+    }
+  },
+  "after": null,
+  "source": { "connector": "postgresql", "db": "neondb", "table": "customers", "snapshot": "false" }
+}
+```
+
+**Por que esta peça:** O conector Debezium gerenciado (`PostgresCdcSourceV2`) lê o Write-Ahead Log (WAL) do Postgres de forma não intrusiva, sem impacto de polling de queries sobre o banco operacional. O `REPLICA IDENTITY FULL` garante que transições de estado (`before` e `after`) estejam presentes nos eventos de UPDATE e DELETE, permitindo que motores de stream como Flink SQL mantenham changelogs consistentes. O parâmetro `heartbeat.interval.ms=60000` avança periodicamente o LSN no slot de replicação mesmo sem novas transações de negócio, evitando acúmulo desnecessário de WAL no Neon e prevenindo estouro de armazenamento.
 
 ## Camada 4 — Processamento (Flink SQL)
 

@@ -1,0 +1,57 @@
+{
+  "type": "record",
+  "name": "Transaction",
+  "namespace": "com.bootcamp.payments.transaction",
+  "doc": "Registro canônico de transações financeiras de pagamento",
+  "fields": [
+    {
+      "name": "transaction_id",
+      "type": "long",
+      "doc": "Identificador único da transação (PK bigint)"
+    },
+    {
+      "name": "card_id",
+      "type": "int",
+      "doc": "Identificador do cartão utilizado (FK cards.card_id)"
+    },
+    {
+      "name": "account_id",
+      "type": "int",
+      "doc": "Identificador da conta de débito/crédito (FK accounts.account_id)"
+    },
+    {
+      "name": "merchant_id",
+      "type": "int",
+      "doc": "Identificador do estabelecimento recebedor (FK merchants.merchant_id)"
+    },
+    {
+      "name": "amount",
+      "type": {
+        "type": "bytes",
+        "logicalType": "decimal",
+        "precision": 15,
+        "scale": 2
+      },
+      "doc": "Valor da transação com precisão monetária (numeric(15,2))"
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "default": "BRL",
+      "doc": "Código ISO da moeda (ex: BRL)"
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "doc": "Status da autorização: APPROVED ou DECLINED"
+    },
+    {
+      "name": "txn_ts",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Timestamp do evento (event time para janelamento temporal e detecção de fraude)"
+    }
+  ]
+}

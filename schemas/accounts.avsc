@@ -1,0 +1,65 @@
+{
+  "type": "record",
+  "name": "Account",
+  "namespace": "com.bootcamp.payments.account",
+  "doc": "Registro canônico de contas bancárias",
+  "fields": [
+    {
+      "name": "account_id",
+      "type": "int",
+      "doc": "Identificador único da conta (PK)"
+    },
+    {
+      "name": "customer_id",
+      "type": "int",
+      "doc": "Identificador do cliente titular (FK customers.customer_id)"
+    },
+    {
+      "name": "account_type",
+      "type": "string",
+      "doc": "Tipo de conta: CHECKING, SAVINGS ou CREDIT"
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "doc": "Status operacional da conta: ACTIVE, BLOCKED ou CLOSED"
+    },
+    {
+      "name": "risk_tier",
+      "type": "string",
+      "doc": "Classificação de risco da conta: LOW, MEDIUM ou HIGH"
+    },
+    {
+      "name": "balance",
+      "type": {
+        "type": "bytes",
+        "logicalType": "decimal",
+        "precision": 15,
+        "scale": 2
+      },
+      "doc": "Saldo da conta com precisão exata (numeric(15,2))"
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "default": "BRL",
+      "doc": "Código ISO da moeda (ex: BRL)"
+    },
+    {
+      "name": "opened_at",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Timestamp de abertura da conta"
+    },
+    {
+      "name": "updated_at",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Timestamp da última atualização da conta"
+    }
+  ]
+}

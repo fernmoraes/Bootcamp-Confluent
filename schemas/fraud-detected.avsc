@@ -1,0 +1,78 @@
+{
+  "type": "record",
+  "name": "FraudAlert",
+  "namespace": "com.bootcamp.payments.fraud",
+  "doc": "Alerta de fraude em tempo real emitido pelo Flink SQL (regra de velocidade MATCH_RECOGNIZE)",
+  "fields": [
+    {
+      "name": "card_id",
+      "type": "int",
+      "doc": "Identificador do cartão sob suspeita de ataque de velocidade"
+    },
+    {
+      "name": "account_id",
+      "type": "int",
+      "doc": "Identificador da conta bancária vinculada ao cartão"
+    },
+    {
+      "name": "customer_id",
+      "type": "int",
+      "doc": "Identificador do cliente titular"
+    },
+    {
+      "name": "first_transaction_id",
+      "type": "long",
+      "doc": "ID da primeira transação da sequência suspeita"
+    },
+    {
+      "name": "last_transaction_id",
+      "type": "long",
+      "doc": "ID da última transação da sequência suspeita"
+    },
+    {
+      "name": "txn_count",
+      "type": "int",
+      "doc": "Quantidade de transações detectadas na janela temporal"
+    },
+    {
+      "name": "total_amount",
+      "type": {
+        "type": "bytes",
+        "logicalType": "decimal",
+        "precision": 15,
+        "scale": 2
+      },
+      "doc": "Soma dos valores das transações dentro da janela"
+    },
+    {
+      "name": "window_start",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Timestamp da primeira transação da janela"
+    },
+    {
+      "name": "window_end",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Timestamp da última transação da janela"
+    },
+    {
+      "name": "rule_name",
+      "type": "string",
+      "default": "RULE_VELOCITY_60S",
+      "doc": "Nome da regra analítica que disparou o alerta"
+    },
+    {
+      "name": "alert_ts",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Timestamp de emissão do alerta"
+    }
+  ]
+}

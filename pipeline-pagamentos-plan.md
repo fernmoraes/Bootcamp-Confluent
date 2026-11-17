@@ -19,9 +19,9 @@
 > | 0 Scaffold | feito |
 > | 1 Banco Neon + seed | feito |
 > | 2 Fundação Confluent | feito |
-> | 3 Contrato de dados (Schema Registry) | **próxima** |
-> | 4 Ingestão CDC | pendente |
-> | 5 Flink SQL | pendente |
+> | 3 Contrato de dados (Schema Registry) | feito |
+> | 4 Ingestão CDC | feito |
+> | 5 Flink SQL | **próxima** |
 > | 6 Consumo | pendente |
 > | 7 Operação (métricas, acesso, custo) | pendente |
 > | 8 setup/teardown | **scripts já existem** (`setup.sh`, `teardown.sh`, `scripts/status.sh`); falta só validar o ciclo completo e incluir a evidência de listas vazias |
@@ -147,7 +147,17 @@ evidencias/ # saídas capturadas (envelopes CDC, alertas, listas vazias)
   4. Script `scripts/test-compat.sh` com os dois cenários (versão candidata A: campo novo com default; versão B: remove campo obrigatório) e captura de saída.
   5. Decidir se os tópicos de CDC usam schema registrado manualmente ou gerado pelo conector, e documentar a escolha.
 - **Relevant Context:** PDF, Camada 2; pasta `schemas/`.
-- **Status:** `[ ] pending`
+- **Status:** `[x] done`
+- **Notas para as próximas sub-tarefas:**
+  - **Schemas registrados:** `schemas/customers.avsc` (ID 100001), `schemas/accounts.avsc` (ID 100002), `schemas/cards.avsc` (ID 100003), `schemas/merchants.avsc` (ID 100004), `schemas/transactions.avsc` (ID 100005), `schemas/fraud-detected.avsc` (ID 100006). Todos sob o namespace `com.bootcamp.payments.*`.
+  - **Valores monetários:** `balance`, `amount`, `total_amount` tipados com precisão como `bytes` + `logicalType: decimal(15,2)`.
+  - **Tags PII e PCI:** criadas no catálogo REST do Stream Governance (`/catalog/v1/types/tagdefs`) via permissão `DataSteward` (atribuída ao `PRODUCER_SA` em `03-schemas.sh`). Tags vinculadas aos campos sensíveis (`customers.full_name`, `email`, `phone`, `birth_date` com `PII`; `cards.card_number_mask` com `PCI`).
+  - **Evolução e compatibilidade:** demonstrados com `confluent schema-registry schema compatibility validate`:
+    - Adicionar campo opcional com default (`channel="POS"`, `device_id=null`): `Compatible | true` (aceito em `BACKWARD`).
+    - Adicionar campo obrigatório sem default (`channel` sem default): `Compatible | false` (rejeitado em `BACKWARD`).
+    - Remover campo obrigatório (`amount`): `Compatible | false` (rejeitado em `FULL`).
+  - **Arquivos criados:** `schemas/*.avsc`, `schemas/test-evolution/*.avsc`, `scripts/03-schemas.sh` (executável e idempotente), `scripts/test-compat.sh`, `scripts/evidence-schemas.sh`, `evidencias/03-contrato-de-dados.txt`.
+  - **Decisão CDC vs Domínio:** O conector Debezium (Sub-tarefa 4) gera envelopes Avro automaticamente no Schema Registry em `<topic.prefix>.public.<tabela>-value` com os campos `before`, `after`, `op`, `ts_ms`. O Flink SQL consome os envelopes CDC e projeta para o modelo analítico e de alerta (`desafio.fraud.detected`), cujo schema segue o contrato de dados registrado.
 
 ### 4. Ingestão CDC (Camada 3)
 - **Intent:** ligar o Postgres ao Kafka e mostrar INSERT, UPDATE e DELETE como eventos.
@@ -159,7 +169,14 @@ evidencias/ # saídas capturadas (envelopes CDC, alertas, listas vazias)
   4. Consumir os tópicos com Avro e salvar os três envelopes em `evidencias/01-envelopes-cdc.json`.
   5. Documentar o motivo do `cdc_user` com menor privilégio e do heartbeat.
 - **Relevant Context:** PDF, Camada 3; `connectors/cdc.json`, `db/`.
-- **Status:** `[ ] pending`
+- **Status:** `[x] done`
+- **Notas para as próximas sub-tarefas:**
+  - **Conector CDC:** `desafio-cdc` (`lcc-9kyqqw7`), status `RUNNING`, task 0 `RUNNING`.
+  - **Tópicos criados automaticamente:** `desafio.public.customers`, `desafio.public.accounts`, `desafio.public.cards`, `desafio.public.merchants`, `desafio.public.transactions` (1 partição, RF 3).
+  - **Envelopes capturados:** `evidencias/01-envelopes-cdc.json` contém `insert_op_c` (`before=null`, `after`), `update_op_u` (`before` preenchido via `REPLICA IDENTITY FULL`, `after`), `delete_op_d` (`before` presente, `after=null`).
+  - **Configurações:** `heartbeat.interval.ms=60000`, `decimal.handling.mode=precise`, `after.state.only=false`, `tombstones.on.delete=true`, slot `desafio_cdc_slot`.
+  - **Arquivos:** `connectors/cdc.json`, `scripts/04-connector.sh` (executável e idempotente), `scripts/evidence-cdc.sh`, `evidencias/01-envelopes-cdc.json`.
+  - **Atenção para Flink SQL (Sub-tarefa 5):** Os tópicos CDC contêm mensagens no formato de envelope Debezium Avro (`before`, `after`, `op`, `ts_ms`, etc.). No Confluent Cloud Flink SQL, os tópicos de Kafka aparecem como tabelas sob o catálogo/database padrão com colunas do schema Avro. Para consultar campos internos da tabela (`after`), avaliar se o Flink enxerga `after.<campo>` ou descompacta os campos diretamente.
 
 ### 5. Processamento Flink SQL (Camada 4)
 - **Intent:** enriquecer transações com contas e emitir alertas de fraude.

@@ -1,0 +1,47 @@
+{
+  "type": "record",
+  "name": "Card",
+  "namespace": "com.bootcamp.payments.card",
+  "doc": "Registro canônico de cartões vinculados a contas",
+  "fields": [
+    {
+      "name": "card_id",
+      "type": "int",
+      "doc": "Identificador único do cartão (PK)"
+    },
+    {
+      "name": "account_id",
+      "type": "int",
+      "doc": "Identificador da conta vinculada (FK accounts.account_id)"
+    },
+    {
+      "name": "card_number_mask",
+      "type": "string",
+      "doc": "Número mascarado do cartão apenas com BIN e last4 (PCI-DSS compliance)",
+      "confluent:tags": ["PCI"]
+    },
+    {
+      "name": "brand",
+      "type": "string",
+      "doc": "Bandeira do cartão: VISA, MASTERCARD ou ELO"
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "doc": "Status do cartão: ACTIVE, BLOCKED ou EXPIRED"
+    },
+    {
+      "name": "expires_on",
+      "type": "string",
+      "doc": "Data de expiração no formato YYYY-MM-DD"
+    },
+    {
+      "name": "issued_at",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Timestamp de emissão do cartão"
+    }
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "type": "record",
+  "name": "TransactionEvent",
+  "namespace": "com.bootcamp.payments.evolution",
+  "doc": "Schema v2 COMPATÍVEL BACKWARD (adiciona campo opcional com valor default)",
+  "fields": [
+    {
+      "name": "transaction_id",
+      "type": "long"
+    },
+    {
+      "name": "card_id",
+      "type": "int"
+    },
+    {
+      "name": "amount",
+      "type": {
+        "type": "bytes",
+        "logicalType": "decimal",
+        "precision": 15,
+        "scale": 2
+      }
+    },
+    {
+      "name": "currency",
+      "type": "string"
+    },
+    {
+      "name": "status",
+      "type": "string"
+    },
+    {
+      "name": "txn_ts",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      }
+    },
+    {
+      "name": "channel",
+      "type": "string",
+      "default": "POS",
+      "doc": "Canal da transação (adicionado com default para compatibilidade BACKWARD)"
+    },
+    {
+      "name": "device_id",
+      "type": ["null", "string"],
+      "default": null,
+      "doc": "Identificador opcional do dispositivo de captura"
+    }
+  ]
+}
