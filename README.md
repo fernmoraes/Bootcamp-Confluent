@@ -68,23 +68,52 @@ cp .env.example .env
 .env.example
 .gitignore
 README.md
-setup.sh          # (Sub-tarefa 8)
-teardown.sh       # (Sub-tarefa 8)
-db/               # DDL + gerador determinístico seed=42 + cdc_user
+pipeline-pagamentos-plan.md  # plano + diário de execução (ler primeiro ao retomar)
+setup.sh          # sobe/retoma tudo (idempotente)
+teardown.sh       # derruba tudo (--dry-run para simular)
+db/               # DDL + gerador determinístico seed=42 + cdc_user + apply.sh
 schemas/          # Avro (com.bootcamp.payments.*)
 connectors/       # cdc.json
 sql/              # statements Flink SQL
-scripts/          # helpers: ACLs, test-compatibility, consumo, métricas, billing
+scripts/          # lib.sh, NN-*.sh (uma por camada), status.sh, evidence-*.sh
 evidencias/       # saídas capturadas
 ```
 
 ## Camada 1 — Fundação
 
-Environment `desafio-final` + cluster Basic `desafio-basic` (aws/us-east-1).
+Environment `desafio-final` + cluster Basic `desafio-basic` (aws/us-east-1). O Schema Registry nasce junto com o primeiro cluster do environment (`confluent schema-registry cluster describe` falha com "Schema Registry not enabled" antes disso).
 
-Identidades: `desafio-producer` (WRITE em `desafio-*`), `desafio-consumer` (READ em `desafio-*` + grupo `desafio-*`); conta pessoal só em setup/teardown.
+Identidades: `desafio-producer` (WRITE em `desafio*`), `desafio-consumer` (READ em `desafio*` + grupo `desafio-*`); conta pessoal só em setup/teardown. Script: `scripts/01-foundation.sh` (idempotente). Evidência completa: `evidencias/02-fundacao.txt`.
 
-`<sua evidência aqui: confluent iam service-account list + acl list por SA>`
+```
+$ confluent iam service-account list
+      ID     |       Name       |          Description
+  sa-7p15z9p | desafio-producer | Escreve nos topicos desafio-*
+  sa-o27kynx | desafio-consumer | Le os topicos desafio-*
+
+$ confluent kafka acl list --service-account sa-7p15z9p     # desafio-producer
+  ALLOW | CREATE            | TOPIC   | desafio       | PREFIXED
+  ALLOW | DESCRIBE          | TOPIC   | desafio       | PREFIXED
+  ALLOW | WRITE             | TOPIC   | desafio       | PREFIXED
+  ALLOW | DESCRIBE          | CLUSTER | kafka-cluster | LITERAL
+  ALLOW | DESCRIBE_CONFIGS  | CLUSTER | kafka-cluster | LITERAL
+
+$ confluent kafka acl list --service-account sa-o27kynx     # desafio-consumer
+  ALLOW | READ     | TOPIC | desafio  | PREFIXED
+  ALLOW | DESCRIBE | TOPIC | desafio  | PREFIXED
+  ALLOW | READ     | GROUP | desafio- | PREFIXED
+```
+
+Prova de menor privilégio (comandos reais com a API key de cada identidade):
+
+```
+producer escreve em desafio.probe                       PERMITIDO
+consumer tenta escrever em desafio.probe                NEGADO
+producer tenta escrever fora do prefixo (outro.topico)  NEGADO
+consumer lê desafio.probe                               PERMITIDO
+```
+
+Schema Registry usa RBAC (não ACL): `DeveloperWrite`/`DeveloperRead` para o producer e `DeveloperRead` para o consumer, no escopo `Subject:desafio*` (prefixo).
 
 **Por que esta peça:** `<sua justificativa aqui>`
 
@@ -139,14 +168,24 @@ Statements em `sql/`: temporal join transações ⋈ contas (PK nos dois lados, 
 | ③ Custos | `<billing cost list do período + 2 alavancas>` |
 | ④ Confiabilidade | `<tabela trecho a trecho; elo fraco: consumer → efeito (idempotência é código meu)>` |
 
-## Como subir e derrubar
+## Como subir, parar e retomar
 
 ```bash
-./setup.sh      # sobe todas as camadas a partir do .env
-./teardown.sh   # remove tudo e evita custo residual
+./setup.sh                    # sobe/retoma tudo, na ordem (idempotente: pode rodar de novo)
+./scripts/status.sh           # o que existe agora (e portanto gera custo) — somente leitura
+./teardown.sh --dry-run       # mostra o que seria apagado, sem apagar nada
+./teardown.sh                 # apaga (pede para digitar "apagar")
+./teardown.sh --yes           # apaga sem perguntar
+./teardown.sh --keep-neon     # não mexe no slot de replicação do Postgres
 ```
 
-(Scripts ainda não implementados — Sub-tarefa 8.)
+**Parar de gastar (pausa entre sessões).** O cluster Kafka Basic, o conector e o Flink cobram por hora enquanto existirem; não há "pausar", só apagar. `./teardown.sh` apaga, nesta ordem: conectores → Flink (statements e compute pool) → role bindings do Schema Registry → API keys → cluster → service accounts → environment (leva o Schema Registry junto) → slot de replicação no Postgres. Ele só toca nos recursos com os nomes do `.env` e **nunca** no environment `default`. Ao fim imprime as listas para provar que nada restou.
+
+**Retomar.** `./setup.sh` recria tudo a partir do zero (leva alguns minutos) e roda cada `scripts/NN-*.sh` em ordem. Como o teardown remove o cluster, **os tópicos, schemas registrados e dados do Kafka são perdidos e recriados**; o conector refaz o snapshot do Postgres. Os dados de origem no Neon sobrevivem ao teardown (o `setup.sh` só recarrega o seed se faltarem linhas; `./setup.sh --reseed` força).
+
+**O que o teardown NÃO apaga:** o projeto Neon e seus dados, o `.env`, e os arquivos em `evidencias/`. Para apagar o projeto Neon: `neon projects delete <id>` (veja o ID em `.neon`). A logical replication da Neon é irreversível, mas isso só afeta aquele projeto.
+
+**Segredos:** as API keys ficam em `.state` (gitignored). O teardown apaga o `.state` junto com as keys; o `setup.sh` gera keys novas.
 
 ## Custo total e teardown
 

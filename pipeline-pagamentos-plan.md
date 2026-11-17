@@ -1,5 +1,34 @@
 # Plano — Pipeline de pagamentos end-to-end (Confluent Cloud)
 
+> ## LEIA PRIMEIRO (para quem retoma este trabalho em um chat novo)
+> Este arquivo é o diário de execução. Idioma: **português do Brasil**. Fonte da verdade da entrega: `Pipeline de pagamentos.pdf`. O README.md é o entregável final e é atualizado a cada sub-tarefa.
+>
+> **Regras de trabalho acordadas com o usuário:**
+> 1. A cada sub-tarefa concluída: atualizar o `Status`, acrescentar "Notas para as próximas sub-tarefas" aqui, e preencher o README com a evidência real (saída de comando, nunca inventada).
+> 2. Nunca imprimir segredos (`.env`, `.env.local`, `.state`). Antes de salvar evidência, conferir que nenhum segredo vazou (`grep -F` dos valores nos arquivos versionáveis).
+> 3. Verificar comandos na documentação/`--help` antes de usar. Não afirmar nada que não foi observado.
+> 4. Scripts novos de cada camada seguem `scripts/NN-nome.sh` (executável, idempotente, `source scripts/lib.sh`); o `setup.sh` os executa em ordem sozinho.
+> 5. Terminal do usuário é zsh, mas os scripts são bash. Rodar verificações com `bash -c` (zsh não aceita `${!var}` e não separa `$c` sem aspas). macOS: não há `timeout`.
+>
+> **Como descobrir o estado real agora:** rode `./scripts/status.sh` (somente leitura). Para parar de gastar: `./teardown.sh --dry-run` e depois `./teardown.sh`. Para retomar: `./setup.sh`.
+>
+> **Painel de estado** (atualizar sempre):
+>
+> | Sub-tarefa | Status |
+> |---|---|
+> | 0 Scaffold | feito |
+> | 1 Banco Neon + seed | feito |
+> | 2 Fundação Confluent | feito |
+> | 3 Contrato de dados (Schema Registry) | **próxima** |
+> | 4 Ingestão CDC | pendente |
+> | 5 Flink SQL | pendente |
+> | 6 Consumo | pendente |
+> | 7 Operação (métricas, acesso, custo) | pendente |
+> | 8 setup/teardown | **scripts já existem** (`setup.sh`, `teardown.sh`, `scripts/status.sh`); falta só validar o ciclo completo e incluir a evidência de listas vazias |
+> | 9 README final | em andamento (camadas 1 e dados já preenchidas) |
+>
+> **Ambiente real em uso (IDs; segredos NÃO ficam aqui):** Neon projeto `late-lake-61849025` (us-east-1, org `org-round-wildflower-93544253`); Confluent org `ibm`, crédito `FREETRIAL400`. Os IDs da Confluent (`env-…`, `lkc-…`, `lsrc-…`, `sa-…`) mudam a cada teardown + setup: use `.state` ou `./scripts/status.sh`, não os valores escritos nas notas abaixo (são do primeiro ciclo).
+
 ## Visão geral
 
 **Objetivo:** entregar um repositório público no GitHub com um pipeline de pagamentos reproduzível:
@@ -94,7 +123,19 @@ evidencias/ # saídas capturadas (envelopes CDC, alertas, listas vazias)
   5. Script de evidência: `confluent iam service-account list` + `confluent kafka acl list` por SA.
   6. Verificar nos docs: ACLs em cluster Basic e a ordem criar SA → ACL → API key.
 - **Relevant Context:** PDF, Camada 1; `setup.sh`, `scripts/`.
-- **Status:** `[ ] pending`
+- **Status:** `[x] done`
+- **Notas para as próximas sub-tarefas:**
+  - **Recursos criados (custo ativo!):** environment `desafio-final` (`env-6nj08j`), cluster Basic `desafio-basic` (`lkc-yow5gwo`, aws/us-east-1, single-zone, UP), Schema Registry `lsrc-w7w0zw5` (nasce sozinho com o 1º cluster; `schema-registry cluster enable` não existe), SAs `desafio-producer` (`sa-7p15z9p`) e `desafio-consumer` (`sa-o27kynx`). O environment `default` (`env-2kpg72`) já existia e não foi tocado. Conta tem crédito `FREETRIAL400` ($400, expira 16/12/2026) e cartão cadastrado.
+  - **Arquivos:** `scripts/lib.sh` (helpers `load_env`, `state_set/state_load`, `retry`, `ensure_login`), `scripts/01-foundation.sh` (idempotente; rodado 2 vezes, a 2ª reaproveitou tudo), `scripts/evidence-foundation.sh`, `evidencias/02-fundacao.txt`. O `setup.sh` da Sub-tarefa 8 deve chamar esses scripts em ordem.
+  - **`.state`** (gitignored, chmod 600) guarda: `ENV_ID`, `CLUSTER_ID`, `BOOTSTRAP`, `KAFKA_REST`, `SR_ID`, `SR_URL`, `PRODUCER_SA`, `CONSUMER_SA` e as 4 API keys (`PRODUCER_KAFKA_KEY/SECRET`, `CONSUMER_KAFKA_KEY/SECRET`, `PRODUCER_SR_KEY/SECRET`, `CONSUMER_SR_KEY/SECRET`). Os secrets só aparecem na criação, então NÃO apagar o `.state`; se apagar, é preciso recriar as keys.
+  - **Mudança de convenção:** `TOPIC_PREFIX=desafio` (sem ponto) em `.env` e `.env.example`, para casar os tópicos `desafio.*` (ex.: `desafio.fraud.detected`). O prefixo de grupos continua `desafio-`.
+  - **ACLs reais (Kafka):** producer = CREATE/WRITE/DESCRIBE em `desafio` (PREFIXED) + DESCRIBE/DESCRIBE_CONFIGS no cluster (exigido pelo Debezium V2, conforme a doc de ACLs de conectores). Consumer = READ/DESCRIBE em `desafio` (PREFIXED) + READ no grupo `desafio-` (PREFIXED). **Lacuna conhecida:** nenhum dos dois tem DESCRIBE_CONFIGS de tópico nem ACL de grupo para o producer; se o conector Debezium ou o Flink pedirem mais ACLs, adicionar em `01-foundation.sh` (Sub-tarefas 4 e 5). A doc diz que o Debezium V2 Postgres não precisa de ACL de `dbhistory` (só MySQL/SQL Server/MariaDB).
+  - **Schema Registry:** usa RBAC, não ACL. Role bindings `DeveloperWrite` e `DeveloperRead` (producer) e `DeveloperRead` (consumer) em `Subject:desafio` (PREFIXED). `confluent iam rbac role-binding list` precisa de `--inclusive` para listar.
+  - **Subjects:** o prefixo cobre `desafio.*`; subjects do conector têm a forma `<topic.prefix>.public.<tabela>-value`, então o `topic.prefix` do conector DEVE começar com `desafio`.
+  - **Compatibilidade global do SR já é `BACKWARD`** (default), então a Sub-tarefa 3 só precisa confirmar e mostrar.
+  - **Conector e Flink usam identidades próprias?** O plano usa a SA `desafio-producer` para o conector (precisa da key de Kafka dela, já no `.state`). Flink precisará de uma SA/permissão própria (statements rodam sob uma SA); decidir na Sub-tarefa 5 se reaproveita o producer (precisa de role `FlinkDeveloper`/`Assigner`) ou cria `desafio-flink`. NÃO verificado.
+  - **Armadilhas do macOS:** não existe `timeout`/`gtimeout`; `confluent kafka topic consume` não tem timeout nativo (usar `&` + `kill`). `zsh` não aceita `${!var}`: rodar verificações com `bash -c`.
+  - **Custo:** o cluster Basic cobra por hora desde a criação. Preço NÃO verificado; coletar com `confluent billing cost list` (há defasagem de dados). Rodar `teardown.sh` ao fim de cada sessão de trabalho.
 
 ### 3. Contrato de dados (Camada 2)
 - **Intent:** registrar os schemas e provar a evolução compatível e a rejeição de quebra.
@@ -166,7 +207,15 @@ evidencias/ # saídas capturadas (envelopes CDC, alertas, listas vazias)
   3. Passo final de verificação: `connect cluster list` / `flink statement list` retornando "None found".
   4. Orientar a limpeza do banco Neon (opcional).
 - **Relevant Context:** PDF, "Custo total e teardown".
-- **Status:** `[ ] pending`
+- **Status:** `[-] parcial` — os scripts já existem e foram criados antecipadamente a pedido do usuário (parar/retomar entre sessões). Falta: validar o ciclo REAL completo (teardown → setup) e capturar a evidência de listas vazias em `evidencias/`.
+- **Notas (scripts já criados):**
+  - `setup.sh`: idempotente; recarrega o seed só se `transactions != 2000` (`--reseed` força); roda `db/apply.sh` se preciso e depois todo `scripts/[0-9][0-9]-*.sh` executável, em ordem; termina com `scripts/status.sh`. **Cada sub-tarefa nova só precisa criar o seu `scripts/NN-*.sh` (executável).** Hoje só existe `01-foundation.sh`; use `03-schemas.sh`, `04-connector.sh`, `05-flink.sh` etc.
+  - `teardown.sh` (`--dry-run`, `--yes`, `--keep-neon`): descobre tudo pelo NOME do `.env` (não depende do `.state`); ordem: conectores → Flink statements e compute pool → role bindings do SR → API keys → cluster → SAs → environment → slot de replicação `desafio%` no Postgres → apaga `.state`. Nunca toca no environment `default`. Testado só em `--dry-run` (não foi executado de verdade).
+  - `scripts/status.sh`: somente leitura, mostra recursos Confluent, `.state`, linhas no Neon e slots.
+  - `scripts/lib.sh` ganhou `pg_admin_env` (prepara `psql` + variáveis `PG*`).
+  - **Pontos a ajustar quando existirem:** (a) se uma sub-tarefa criar recursos novos que não morrem com o cluster/environment (ex.: Flink compute pool com nome próprio, API keys do Flink, role bindings novos), acrescentar a remoção no `teardown.sh`; o dry-run mostra o que ele enxerga. (b) Flink: `flink statement list` exige `--cloud/--region`; já está no teardown. (c) Hoje o teardown remove as 3 role bindings do SR criadas em `01-foundation.sh` por nome de SA; se mudar os bindings, mude nos dois lugares.
+  - **Efeito de parar/retomar:** apagar o cluster destrói tópicos e schemas. O slot de replicação do Postgres é removido no teardown porque um slot órfão retém WAL e mantém o compute do Neon ativo. Ao retomar, o conector (Sub-tarefa 4) recria slot e refaz o snapshot. IDs da Confluent mudam.
+- **Regra para a Sub-tarefa 4:** o conector deve ser criado por `scripts/04-connector.sh` e o `connectors/cdc.json` deve usar `slot.name` começando com `desafio` (o teardown só apaga slots `desafio%`).
 
 ### 9. README final com evidências
 - **Intent:** transformar as saídas reais em uma entrega nota alta.
