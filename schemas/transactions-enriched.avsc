@@ -1,0 +1,72 @@
+{
+  "type": "record",
+  "name": "EnrichedTransaction",
+  "namespace": "com.bootcamp.payments.enriched",
+  "doc": "Transação financeira enriquecida com dados da conta (Temporal Join Flink SQL)",
+  "fields": [
+    {
+      "name": "transaction_id",
+      "type": "long",
+      "doc": "Identificador da transação"
+    },
+    {
+      "name": "card_id",
+      "type": "int",
+      "doc": "Identificador do cartão"
+    },
+    {
+      "name": "account_id",
+      "type": "int",
+      "doc": "Identificador da conta bancária"
+    },
+    {
+      "name": "customer_id",
+      "type": "int",
+      "doc": "Identificador do cliente titular"
+    },
+    {
+      "name": "merchant_id",
+      "type": "int",
+      "doc": "Identificador do estabelecimento"
+    },
+    {
+      "name": "amount",
+      "type": {
+        "type": "bytes",
+        "logicalType": "decimal",
+        "precision": 15,
+        "scale": 2
+      },
+      "doc": "Valor da transação"
+    },
+    {
+      "name": "currency",
+      "type": "string",
+      "default": "BRL",
+      "doc": "Moeda"
+    },
+    {
+      "name": "status",
+      "type": "string",
+      "doc": "Status da autorização"
+    },
+    {
+      "name": "account_type",
+      "type": "string",
+      "doc": "Tipo de conta"
+    },
+    {
+      "name": "risk_tier",
+      "type": "string",
+      "doc": "Nível de risco da conta"
+    },
+    {
+      "name": "txn_ts",
+      "type": {
+        "type": "long",
+        "logicalType": "timestamp-millis"
+      },
+      "doc": "Timestamp do evento"
+    }
+  ]
+}
