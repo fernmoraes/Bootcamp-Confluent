@@ -1,0 +1,115 @@
+== Camada 5 — Operação e Governança: Os Quatro Pilares (Evidências Reais)
+Data da Coleta: 2026-11-17 16:20:31 UTC
+Cluster ID: lkc-yow5gwo
+Environment ID: env-6nj08j
+
+=== PILAR 1: Observabilidade (Métricas e Lag) ===
+=== 1. Métricas de Volume no Cluster (lkc-yow5gwo) — Granularidade 1h ===
+
+--- io.confluent.kafka.server/received_bytes (Bytes Recebidos / Ingestão) ---
+{
+  "data": [
+    {
+      "timestamp": "2026-11-17T13:00:00Z",
+      "value": 1084678.0
+    },
+    {
+      "timestamp": "2026-11-17T14:00:00Z",
+      "value": 446568.0
+    },
+    {
+      "timestamp": "2026-11-17T15:00:00Z",
+      "value": 5918.0
+    },
+    {
+      "timestamp": "2026-11-17T16:00:00Z",
+      "value": 1840.0
+    }
+  ]
+}
+
+--- io.confluent.kafka.server/sent_bytes (Bytes Enviados / Egress / Flink & Consumidores) ---
+{
+  "data": [
+    {
+      "timestamp": "2026-11-17T13:00:00Z",
+      "value": 1614900.0
+    },
+    {
+      "timestamp": "2026-11-17T14:00:00Z",
+      "value": 4740106.0
+    },
+    {
+      "timestamp": "2026-11-17T15:00:00Z",
+      "value": 820.0
+    }
+  ]
+}
+
+--- io.confluent.kafka.server/retained_bytes (Bytes Retidos em Disco) ---
+{
+  "data": [
+    {
+      "timestamp": "2026-11-17T13:00:00Z",
+      "value": 1084678.0
+    },
+    {
+      "timestamp": "2026-11-17T14:00:00Z",
+      "value": 1534210.0
+    },
+    {
+      "timestamp": "2026-11-17T15:00:00Z",
+      "value": 1539730.0
+    },
+    {
+      "timestamp": "2026-11-17T16:00:00Z",
+      "value": 1541570.0
+    }
+  ]
+}
+
+=== 2. Grupos de Consumo e Lag ===
+None found.
+
+=== PILAR 2: Segurança e Controle de Acesso (Matriz de Menor Privilégio) ===
+Service Accounts e ACLs Kafka configuradas:
+     Principal    | Permission |    Operation     | Resource Type |    Resource Name     | Pattern Type  
+------------------+------------+------------------+---------------+----------------------+---------------
+  User:sa-7p15z9p | ALLOW      | CREATE           | TOPIC         | __debezium-heartbeat | PREFIXED      
+  User:sa-7p15z9p | ALLOW      | CREATE           | TOPIC         | desafio              | PREFIXED      
+  User:sa-7p15z9p | ALLOW      | DESCRIBE         | CLUSTER       | kafka-cluster        | LITERAL       
+  User:sa-7p15z9p | ALLOW      | DESCRIBE         | TOPIC         | __debezium-heartbeat | PREFIXED      
+  User:sa-7p15z9p | ALLOW      | DESCRIBE         | TOPIC         | desafio              | PREFIXED      
+  User:sa-7p15z9p | ALLOW      | DESCRIBE_CONFIGS | CLUSTER       | kafka-cluster        | LITERAL       
+  User:sa-7p15z9p | ALLOW      | WRITE            | TOPIC         | __debezium-heartbeat | PREFIXED      
+  User:sa-7p15z9p | ALLOW      | WRITE            | TOPIC         | desafio              | PREFIXED      
+  User:sa-o27kynx | ALLOW      | DESCRIBE         | TOPIC         | desafio              | PREFIXED      
+  User:sa-o27kynx | ALLOW      | READ             | GROUP         | desafio-             | PREFIXED      
+  User:sa-o27kynx | ALLOW      | READ             | TOPIC         | desafio              | PREFIXED      
+
+RBAC no Schema Registry / Stream Governance (Producer: desafio-producer):
+     ID     |    Principal    | Email |      Role      | Environment | Cloud Cluster |  Cluster Type   | Logical Cluster | Resource Type |  Name   | Pattern Type  
+------------+-----------------+-------+----------------+-------------+---------------+-----------------+-----------------+---------------+---------+---------------
+  rb-3mW1WK | User:sa-7p15z9p |       | DataSteward    | env-6nj08j  |               |                 |                 |               |         |               
+  rb-A8QwbN | User:sa-7p15z9p |       | DeveloperWrite | env-6nj08j  |               | Schema Registry | lsrc-w7w0zw5    | Subject       | desafio | PREFIXED      
+  rb-G3bEPo | User:sa-7p15z9p |       | DeveloperRead  | env-6nj08j  |               | Schema Registry | lsrc-w7w0zw5    | Subject       | desafio | PREFIXED      
+
+RBAC no Schema Registry (Consumer: desafio-consumer):
+     ID     |    Principal    | Email |     Role      | Environment | Cloud Cluster |  Cluster Type   | Logical Cluster | Resource Type |  Name   | Pattern Type  
+------------+-----------------+-------+---------------+-------------+---------------+-----------------+-----------------+---------------+---------+---------------
+  rb-B3qDrP | User:sa-o27kynx |       | DeveloperRead | env-6nj08j  |               | Schema Registry | lsrc-w7w0zw5    | Subject       | desafio | PREFIXED      
+
+=== PILAR 3: Custos Reais e Faturamento Confluent Cloud ===
+  Start Date |  End Date  | Granularity |  Line Type   | Product | Resource | Resource Name | Environment | Network Access Type | Price | Original Amount | Discount Amount | Amount  
+-------------+------------+-------------+--------------+---------+----------+---------------+-------------+---------------------+-------+-----------------+-----------------+---------
+  2026-11-16 | 2026-11-17 | DAILY       | PROMO_CREDIT |         |          |               |             |                     |       | $0.00           |                 | $0.00   
+  2026-11-16 | 2026-11-17 | DAILY       | PROMO_CREDIT |         |          |               |             |                     |       | $0.00           |                 | $0.00   
+
+=== PILAR 4: Confiabilidade Fim a Fim e Idempotência ===
+Análise de Garantias por Trecho:
+1. Postgres WAL -> CDC Debezium: At-least-once garantido via replication slot LSN.
+2. Debezium -> Tópicos Kafka: At-least-once com acks=all e RF=3.
+3. Kafka -> Flink SQL -> Tópicos de Alerta: Exactly-once nativo com checkpoints e transações.
+4. Tópico de Alerta -> Consumidor: At-least-once.
+   [ELO FRACO]: Efeito colateral do consumidor (ex: bloquear cartão / notificar).
+   Mitigação: Idempotência na aplicação consumidora chaveada por (card_id, first_transaction_id, window_start).
