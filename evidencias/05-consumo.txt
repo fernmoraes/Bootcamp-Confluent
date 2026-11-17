@@ -1,0 +1,39 @@
+== Camada 5 — Consumo e Controle de Acesso (Evidências Reais)
+Data: 2026-11-17 15:11:52 UTC
+Identidade do Consumidor: desafio-consumer
+Grupo de Consumo Utilizado: desafio-evidence-1794928299
+Tópico Alvo: desafio.fraud.detected
+
+=== 1. Leitura Autorizada de Alertas de Fraude
+Comando:
+  confluent kafka topic consume desafio.fraud.detected \
+    --group desafio-evidence-1794928299 \
+    --value-format avro --schema-registry-endpoint <SR_URL> \
+    --from-beginning
+
+Amostra de Alerta Consumido:
+{
+  "account_id": 100,
+  "alert_ts": "2026-11-17T14:57:03.999Z",
+  "card_id": 100,
+  "customer_id": 100,
+  "first_transaction_id": 90001,
+  "last_transaction_id": 90003,
+  "rule_name": "RULE_VELOCITY_60S",
+  "total_amount": "1701/2",
+  "txn_count": 3,
+  "window_end": "2026-11-17T14:56:56.792Z",
+  "window_start": "2026-11-17T14:56:56.788Z"
+}
+
+=== 2. Teste Negativo de Escrita (Menor Privilégio / ACLs)
+Comando executado com credenciais de desafio-consumer:
+  echo '{"attempt": "unauthorized_write_test"}' | confluent kafka topic produce desafio.fraud.detected
+
+Saída do broker Kafka:
+Starting Kafka Producer. Use Ctrl-C or Ctrl-D to exit.
+failed to produce offset -1: Broker: Topic authorization failed
+
+Resultado da Avaliação de Segurança:
+  [OK] Escrita negada com sucesso: Broker retornou 'Topic authorization failed'.
+       A service account 'desafio-consumer' possui estritamente permissões de leitura (READ, DESCRIBE) e não consegue poluir nem alterar dados em tópicos 'desafio*'.
