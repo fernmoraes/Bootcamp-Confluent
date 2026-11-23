@@ -15,33 +15,62 @@ OUT="$ROOT/evidencias/05-consumo.txt"
 TMP="$OUT.tmp"
 TMP_CONSUME="$(mktemp -t consumer-alerts.XXXXXX.log)"
 TMP_PRODUCE="$(mktemp -t consumer-negative-write.XXXXXX.log)"
+# Em qualquer saída (sucesso ou falha) apaga os temporários; a evidência anterior só é trocada pelo mv final.
+trap 'rm -f "$TMP" "$TMP_CONSUME" "$TMP_PRODUCE"' EXIT
 
 TOPIC="${TOPIC_PREFIX}.fraud.detected"
-GROUP="${CONSUMER_GROUP_PREFIX}evidence-$(date +%s)"
+TRIES="${CONSUME_TRIES:-6}"   # cluster recém-criado: leitura e ACL podem demorar a propagar
+
+# Sucesso = ao menos um alerta lido. Um cluster novo pode devolver só "Starting Kafka Consumer" nos primeiros segundos.
+consume_alerts() {
+  local try
+  for try in $(seq 1 "$TRIES"); do
+    GROUP="${CONSUMER_GROUP_PREFIX}evidence-$(date +%s)"
+    : > "$TMP_CONSUME"
+    confluent kafka topic consume "$TOPIC" \
+      --cluster "$CLUSTER_ID" \
+      --environment "$ENV_ID" \
+      --api-key "$CONSUMER_KAFKA_KEY" \
+      --api-secret "$CONSUMER_KAFKA_SECRET" \
+      --value-format avro \
+      --schema-registry-endpoint "$SR_URL" \
+      --schema-registry-api-key "$CONSUMER_SR_KEY" \
+      --schema-registry-api-secret "$CONSUMER_SR_SECRET" \
+      --group "$GROUP" \
+      --from-beginning > "$TMP_CONSUME" 2>&1 &
+    local pid=$!
+    sleep 10
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    grep -q "RULE_VELOCITY_60S" "$TMP_CONSUME" && return 0
+    log "   tentativa $try/$TRIES: nenhum alerta lido (última linha: $(tail -1 "$TMP_CONSUME" | cut -c1-120)); tentando de novo"
+    sleep 5
+  done
+  return 1
+}
+
+# Teste negativo. Só "Topic authorization failed" aprova (e encerra sem repetir).
+# Qualquer outra saída (conexão, propagação, erro genérico) repete; esgotadas as tentativas, é FALHA.
+negative_write() {
+  local try
+  for try in $(seq 1 "$TRIES"); do
+    echo '{"attempt": "unauthorized_write_test"}' | confluent kafka topic produce "$TOPIC" \
+      --cluster "$CLUSTER_ID" \
+      --environment "$ENV_ID" \
+      --api-key "$CONSUMER_KAFKA_KEY" \
+      --api-secret "$CONSUMER_KAFKA_SECRET" > "$TMP_PRODUCE" 2>&1 || true
+    grep -q "Topic authorization failed" "$TMP_PRODUCE" && return 0
+    log "   tentativa $try/$TRIES: sem 'Topic authorization failed' (saída: $(tail -1 "$TMP_PRODUCE" | cut -c1-160)); tentando de novo"
+    sleep 5
+  done
+  return 1
+}
 
 log "1. Consumindo alertas do tópico $TOPIC com a identidade $CONSUMER_SA_NAME..."
-confluent kafka topic consume "$TOPIC" \
-  --cluster "$CLUSTER_ID" \
-  --environment "$ENV_ID" \
-  --api-key "$CONSUMER_KAFKA_KEY" \
-  --api-secret "$CONSUMER_KAFKA_SECRET" \
-  --value-format avro \
-  --schema-registry-endpoint "$SR_URL" \
-  --schema-registry-api-key "$CONSUMER_SR_KEY" \
-  --schema-registry-api-secret "$CONSUMER_SR_SECRET" \
-  --group "$GROUP" \
-  --from-beginning > "$TMP_CONSUME" 2>&1 &
-PID=$!
-sleep 10
-kill $PID 2>/dev/null || true
+consume_alerts || die "nenhum alerta RULE_VELOCITY_60S lido em $TRIES tentativas; evidência anterior mantida."
 
 log "2. Executando teste negativo de escrita (tentativa de produzir com $CONSUMER_SA_NAME)..."
-# Tentativa de produzir com as credenciais do consumidor (que só tem permissão de leitura)
-echo '{"attempt": "unauthorized_write_test"}' | confluent kafka topic produce "$TOPIC" \
-  --cluster "$CLUSTER_ID" \
-  --environment "$ENV_ID" \
-  --api-key "$CONSUMER_KAFKA_KEY" \
-  --api-secret "$CONSUMER_KAFKA_SECRET" > "$TMP_PRODUCE" 2>&1 || true
+negative_write || die "não vi 'Topic authorization failed' em $TRIES tentativas; NÃO aprovo o teste; evidência anterior mantida."
 
 log "3. Montando arquivo de evidência..."
 {
@@ -69,12 +98,8 @@ log "3. Montando arquivo de evidência..."
   cat "$TMP_PRODUCE"
   echo
   echo "Resultado da Avaliação de Segurança:"
-  if grep -q "Topic authorization failed" "$TMP_PRODUCE"; then
-    echo "  [OK] Escrita negada com sucesso: Broker retornou 'Topic authorization failed'."
-    echo "       A service account '$CONSUMER_SA_NAME' possui estritamente permissões de leitura (READ, DESCRIBE) e não consegue poluir nem alterar dados em tópicos '${TOPIC_PREFIX}*'."
-  else
-    echo "  [AVISO] Verifique a saída do teste de escrita."
-  fi
+  echo "  [OK] Escrita negada com sucesso: Broker retornou 'Topic authorization failed'."
+  echo "       A service account '$CONSUMER_SA_NAME' possui estritamente permissões de leitura (READ, DESCRIBE) e não consegue poluir nem alterar dados em tópicos '${TOPIC_PREFIX}*'."
 } > "$TMP"
 
 rm -f "$TMP_CONSUME" "$TMP_PRODUCE"

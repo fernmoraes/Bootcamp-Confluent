@@ -1,20 +1,20 @@
 == Camada 5 — Consumo e Controle de Acesso (Evidências Reais)
-Data: 2026-11-23 17:08:44 UTC
+Data: 2026-11-23 20:51:57 UTC
 Identidade do Consumidor: desafio-consumer
-Grupo de Consumo Utilizado: desafio-evidence-1795453709
+Grupo de Consumo Utilizado: desafio-evidence-1795467101
 Tópico Alvo: desafio.fraud.detected
 
 === 1. Leitura Autorizada de Alertas de Fraude
 Comando:
   confluent kafka topic consume desafio.fraud.detected \
-    --group desafio-evidence-1795453709 \
+    --group desafio-evidence-1795467101 \
     --value-format avro --schema-registry-endpoint <SR_URL> \
     --from-beginning
 
 Amostra de Alerta Consumido:
 {
   "account_id": 214,
-  "alert_ts": "2026-11-23T17:06:00.334Z",
+  "alert_ts": "2026-11-23T20:18:05.918Z",
   "card_id": 320,
   "customer_id": 9,
   "first_transaction_id": 839,
