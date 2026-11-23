@@ -1,31 +1,79 @@
 == Camada 4 — Processamento Flink SQL (Evidências reais)
-Data: 2026-11-17 15:04:24 UTC
+Data: 2026-11-23 13:58:59 UTC
 
-=== 1. Statements Flink SQL em Execução (Compute Pool: desafio-pool)
+=== 1. Statements Flink SQL em execução (compute pool: desafio-pool)
   - desafio-accounts-populate [Status: RUNNING]
-  - desafio-transactions-stream [Status: RUNNING]
-  - desafio-fraud-detection [Status: RUNNING]
   - desafio-enrichment [Status: RUNNING]
+  - desafio-fraud-detection [Status: RUNNING]
 
-=== 2. Alerta de Fraude Emitido (Tópico: desafio.fraud.detected)
+=== 2. Alertas emitidos em desafio.fraud.detected (lidos com a identidade desafio-consumer)
 Regra: RULE_VELOCITY via MATCH_RECOGNIZE (PATTERN (T{3,}?) WITHIN INTERVAL '60' SECOND, PARTITION BY card_id)
+Total de alertas: 7
 
-{
-  "account_id": 100,
-  "alert_ts": "2026-11-17T14:57:03.999Z",
-  "card_id": 100,
-  "customer_id": 100,
-  "first_transaction_id": 90001,
-  "last_transaction_id": 90003,
-  "rule_name": "RULE_VELOCITY_60S",
-  "total_amount": "1701/2",
-  "txn_count": 3,
-  "window_end": "2026-11-17T14:56:56.792Z",
-  "window_start": "2026-11-17T14:56:56.788Z"
-}
+{"card_id":100,"customer_id":100,"first_transaction_id":1726,"last_transaction_id":1728,"txn_count":3,"total_amount":"4651/10","window_start":"2026-10-26T10:14:04Z","window_end":"2026-10-26T10:14:26Z","rule_name":"RULE_VELOCITY_60S"}
+{"card_id":114,"customer_id":114,"first_transaction_id":1216,"last_transaction_id":1218,"txn_count":3,"total_amount":"14187/25","window_start":"2026-10-19T06:48:07Z","window_end":"2026-10-19T06:48:17Z","rule_name":"RULE_VELOCITY_60S"}
+{"card_id":245,"customer_id":160,"first_transaction_id":117,"last_transaction_id":119,"txn_count":3,"total_amount":"2811/20","window_start":"2026-10-03T07:51:57Z","window_end":"2026-10-03T07:52:28Z","rule_name":"RULE_VELOCITY_60S"}
+{"card_id":320,"customer_id":9,"first_transaction_id":839,"last_transaction_id":841,"txn_count":3,"total_amount":"36763/100","window_start":"2026-10-14T01:14:27Z","window_end":"2026-10-14T01:14:46Z","rule_name":"RULE_VELOCITY_60S"}
+{"card_id":260,"customer_id":111,"first_transaction_id":1747,"last_transaction_id":1749,"txn_count":3,"total_amount":"4153/20","window_start":"2026-10-26T19:30:49Z","window_end":"2026-10-26T19:31:07Z","rule_name":"RULE_VELOCITY_60S"}
+{"card_id":228,"customer_id":63,"first_transaction_id":882,"last_transaction_id":884,"txn_count":3,"total_amount":"1618/25","window_start":"2026-10-14T14:34:23Z","window_end":"2026-10-14T14:34:59Z","rule_name":"RULE_VELOCITY_60S"}
+{"card_id":50,"customer_id":50,"first_transaction_id":2001,"last_transaction_id":2003,"txn_count":3,"total_amount":"1701/2","window_start":"2026-11-17T14:46:05Z","window_end":"2026-11-17T14:46:25Z","rule_name":"RULE_VELOCITY_60S"}
 
-=== 3. As 3 Transações de Origem que Dispararam o Alerta (card_id=100, rajada < 60s)
-Transação 1: ID 90001 | card_id=100 | account_id=100 | amount=R$ 150.00 | merchant_id=10 | status=APPROVED
-Transação 2: ID 90002 | card_id=100 | account_id=100 | amount=R$ 280.50 | merchant_id=12 | status=APPROVED
-Transação 3: ID 90003 | card_id=100 | account_id=100 | amount=R$ 420.00 | merchant_id=15 | status=APPROVED
-Total da Rajada: R$ 850.50 (3 transações no mesmo cartão em intervalo de segundos)
+=== 3. Transações de origem de cada alerta (consulta REAL ao Postgres, mesmo card_id, janela < 60 s)
+--- card_id=100 (transações 1726 a 1728)
+ transaction_id | card_id | amount |  status  |         txn_ts         
+----------------+---------+--------+----------+------------------------
+           1726 |     100 | 193.20 | APPROVED | 2026-10-26 10:14:04+00
+           1727 |     100 |  36.29 | APPROVED | 2026-10-26 10:14:23+00
+           1728 |     100 | 235.61 | APPROVED | 2026-10-26 10:14:26+00
+(3 rows)
+
+--- card_id=114 (transações 1216 a 1218)
+ transaction_id | card_id | amount |  status  |         txn_ts         
+----------------+---------+--------+----------+------------------------
+           1216 |     114 | 254.98 | APPROVED | 2026-10-19 06:48:07+00
+           1217 |     114 |  58.81 | APPROVED | 2026-10-19 06:48:14+00
+           1218 |     114 | 253.69 | APPROVED | 2026-10-19 06:48:17+00
+(3 rows)
+
+--- card_id=245 (transações 117 a 119)
+ transaction_id | card_id | amount |  status  |         txn_ts         
+----------------+---------+--------+----------+------------------------
+            117 |     245 |  27.85 | DECLINED | 2026-10-03 07:51:57+00
+            118 |     245 |  80.97 | APPROVED | 2026-10-03 07:52:05+00
+            119 |     245 |  31.73 | APPROVED | 2026-10-03 07:52:28+00
+(3 rows)
+
+--- card_id=320 (transações 839 a 841)
+ transaction_id | card_id | amount |  status  |         txn_ts         
+----------------+---------+--------+----------+------------------------
+            839 |     320 | 288.71 | APPROVED | 2026-10-14 01:14:27+00
+            840 |     320 |  24.44 | APPROVED | 2026-10-14 01:14:33+00
+            841 |     320 |  54.48 | APPROVED | 2026-10-14 01:14:46+00
+(3 rows)
+
+--- card_id=260 (transações 1747 a 1749)
+ transaction_id | card_id | amount |  status  |         txn_ts         
+----------------+---------+--------+----------+------------------------
+           1747 |     260 |  14.23 | APPROVED | 2026-10-26 19:30:49+00
+           1748 |     260 |  62.84 | APPROVED | 2026-10-26 19:31:04+00
+           1749 |     260 | 130.58 | APPROVED | 2026-10-26 19:31:07+00
+(3 rows)
+
+--- card_id=228 (transações 882 a 884)
+ transaction_id | card_id | amount |  status  |         txn_ts         
+----------------+---------+--------+----------+------------------------
+            882 |     228 |  31.28 | APPROVED | 2026-10-14 14:34:23+00
+            883 |     228 |  21.30 | APPROVED | 2026-10-14 14:34:35+00
+            884 |     228 |  12.14 | APPROVED | 2026-10-14 14:34:59+00
+(3 rows)
+
+--- card_id=50 (transações 2001 a 2003)
+ transaction_id | card_id | amount |  status  |            txn_ts             
+----------------+---------+--------+----------+-------------------------------
+           2001 |      50 | 150.00 | APPROVED | 2026-11-17 14:46:05.345974+00
+           2002 |      50 | 280.50 | APPROVED | 2026-11-17 14:46:15.345974+00
+           2003 |      50 | 420.00 | APPROVED | 2026-11-17 14:46:25.345974+00
+(3 rows)
+
+=== 4. Cartões que NÃO devem gerar alerta (seed): 126 (2 transações em 30 s) e 86 (3 transações espaçadas, 90 s)
+Nenhum alerta para os cartões 126 e 86, como esperado.

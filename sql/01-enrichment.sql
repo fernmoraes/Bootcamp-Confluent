@@ -1,5 +1,8 @@
 -- Camada 4 — Flink SQL: Enriquecimento de transações (Temporal Table Join transações ⋈ contas)
 -- Propriedade de execução: sql.tables.scan.idle-timeout=5s
+-- Pré-requisito (scripts/05-flink.sh): tabelas desafio.public.transactions (coluna txn_time + watermark,
+-- changelog.mode=append) e desafio.accounts.versioned (PK account_id + watermark em updated_at).
+-- txn_time é o relógio de EVENTO (txn_ts do Postgres), não o de ingestão.
 INSERT INTO `desafio.transactions.enriched` (
   transaction_id,
   card_id,
@@ -24,7 +27,7 @@ SELECT
   t.status,
   a.account_type,
   a.risk_tier,
-  TO_TIMESTAMP_LTZ(REPLACE(SUBSTRING(t.txn_ts, 1, 19), 'T', ' '), 'yyyy-MM-dd HH:mm:ss', 'UTC') AS txn_ts
+  t.txn_time AS txn_ts
 FROM `desafio.public.transactions` t
-JOIN `desafio.accounts.versioned` a
+JOIN `desafio.accounts.versioned` FOR SYSTEM_TIME AS OF t.txn_time AS a
   ON t.account_id = a.account_id;

@@ -17,8 +17,8 @@ if [ -z "${METRICS_CLOUD_KEY:-}" ] || [ -z "${METRICS_CLOUD_SECRET:-}" ]; then
   CREATED_TEMP_KEY=true
 fi
 
-# Janela de consulta: últimas 12 horas
-START=$(date -u -v-12H "+%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -d "12 hours ago" "+%Y-%m-%dT%H:%M:%SZ")
+# Janela de consulta: últimas 12 horas (ou desde METRICS_START, p.ex. 2026-11-16T00:00:00Z)
+START="${METRICS_START:-$(date -u -v-12H "+%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || date -u -d "12 hours ago" "+%Y-%m-%dT%H:%M:%SZ")}"
 END=$(date -u "+%Y-%m-%dT%H:%M:%SZ")
 
 query_metric() {
