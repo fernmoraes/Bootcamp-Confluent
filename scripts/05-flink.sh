@@ -44,18 +44,37 @@ fi
 # DDL (statements efêmeros: rodam, completam e são apagados)
 # (as tabelas de saída desafio.transactions.enriched / desafio.fraud.detected são criadas pelo Flink a partir
 #  dos schemas Avro registrados; enriched precisa de watermark em txn_ts para o MATCH_RECOGNIZE.)
+# O `--wait` da CLI volta quando o statement está RUNNING, e um CREATE TABLE leva dezenas de segundos para chegar a
+# COMPLETED (medido: RUNNING em 6 s, COMPLETED em 38 s). Apagar o statement nesse intervalo interrompe a criação e
+# deixa tópico e subjects órfãos, sem a tabela no catálogo. Por isso: só COMPLETED é sucesso, FAILED/STOPPED
+# tentam de novo, e um DDL ainda RUNNING NUNCA é apagado (se estourar o tempo, o script aborta e o deixa vivo).
+ddl_status() {   # vazio se o statement não existe (describe falha; com set -e/pipefail isso mataria o script)
+  confluent flink statement describe "$1" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" -o json 2>/dev/null | jq -r '.status // empty' || true
+}
 run_ddl() {
-  local name="$1" sql_content="$2" try st
+  local name="$1" sql_content="$2" try st deadline timeout="${DDL_WAIT_TIMEOUT:-600}"
   for try in 1 2 3 4 5 6; do
+    st="$(ddl_status "$name")"
+    # statement homônimo ainda em andamento: espera por ele, não apaga nem recria
+    if [ "$st" != "RUNNING" ] && [ "$st" != "PENDING" ]; then
+      confluent flink statement delete "$name" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" --force >/dev/null 2>&1 || true
+      confluent flink statement create "$name" \
+        --sql "$sql_content" \
+        --compute-pool "$POOL_ID" --database "$CLUSTER_ID" \
+        --environment "$ENV_ID" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" \
+        --wait >/dev/null 2>&1 || true
+    fi
+    deadline=$(( $(date +%s) + timeout ))
+    while :; do
+      st="$(ddl_status "$name")"
+      case "$st" in COMPLETED|FAILED|STOPPED) break ;; esac
+      if [ "$(date +%s)" -ge "$deadline" ]; then
+        die "DDL $name ainda ${st:-sem status} após ${timeout}s; NÃO apago um DDL em andamento. Confira: confluent flink statement describe $name"
+      fi
+      sleep 5
+    done
     confluent flink statement delete "$name" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" --force >/dev/null 2>&1 || true
-    confluent flink statement create "$name" \
-      --sql "$sql_content" \
-      --compute-pool "$POOL_ID" --database "$CLUSTER_ID" \
-      --environment "$ENV_ID" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" \
-      --wait >/dev/null 2>&1 || true
-    st="$(confluent flink statement describe "$name" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" -o json 2>/dev/null | jq -r '.status // empty')"
-    confluent flink statement delete "$name" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" --force >/dev/null 2>&1 || true
-    if [ "$st" = "COMPLETED" ] || [ "$st" = "RUNNING" ]; then log "DDL $name: $st"; return 0; fi
+    if [ "$st" = "COMPLETED" ]; then log "DDL $name: $st"; return 0; fi
     log "DDL $name: status=${st:-desconhecido} (tentativa $try/6), tentando de novo em 15s"; sleep 15
   done
   die "DDL $name falhou após 6 tentativas"
