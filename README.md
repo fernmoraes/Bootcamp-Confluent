@@ -274,76 +274,121 @@ Captura de ciclo completo `INSERT` $\rightarrow$ `UPDATE` $\rightarrow$ `DELETE`
 
 Processamento de stream contínuo com Apache Flink gerenciado na Confluent Cloud (Compute Pool `desafio-pool`, região `aws/us-east-1`). Statements em `sql/` com a propriedade de execução `sql.tables.scan.idle-timeout=5s` (evita travamento de janelas temporais por partições ociosas). Script de automação: `scripts/05-flink.sh`. Evidência completa: `evidencias/04-alerta-fraude.txt`.
 
-### Statements Flink SQL em Execução
+**O caminho é o real, de ponta a ponta:** Postgres → conector CDC → `desafio.public.transactions` → Flink → `desafio.fraud.detected`. Nenhuma transação foi injetada à mão no Flink: os alertas abaixo nascem das 2000 transações do seed (mais a rajada de teste do cartão 50, inserida no Postgres).
+
+### Tabelas e tempo de evento (`scripts/05-flink.sh`)
+
+A tabela que o conector publica chega ao Flink como *changelog* (`retract`) e com `txn_ts` em texto. Para o temporal join e o `MATCH_RECOGNIZE` o script faz três ajustes, todos por DDL:
+
+1. `changelog.mode = 'append'` em `desafio.public.transactions` (a tabela só recebe INSERTs de negócio);
+2. coluna calculada `txn_time` = `txn_ts` convertido para `TIMESTAMP_LTZ(3)`, com `WATERMARK ... INTERVAL '5' SECOND`. O relógio é o do **evento** (`txn_ts` do Postgres, em outubro/2026), não o de ingestão;
+3. `desafio.accounts.versioned` com `PRIMARY KEY (account_id)` e `updated_at` como tempo de evento (exigência do `FOR SYSTEM_TIME AS OF`).
+
+### Statements Flink SQL em execução
 
 ```
 $ confluent flink statement list
-  - desafio-accounts-populate   [Status: RUNNING]  # alimenta tabela versionada de contas
-  - desafio-transactions-stream [Status: RUNNING]  # projeta transações com timestamp e watermark
-  - desafio-enrichment          [Status: RUNNING]  # Temporal Join transações ⋈ contas
-  - desafio-fraud-detection     [Status: RUNNING]  # Complex Event Processing (MATCH_RECOGNIZE)
+  - desafio-accounts-populate [Status: RUNNING]
+  - desafio-enrichment [Status: RUNNING]
+  - desafio-fraud-detection [Status: RUNNING]
 ```
 
-### Regra de Fraude: Velocidade em Tempo Real (`RULE_VELOCITY`)
+- `desafio-accounts-populate`: alimenta `desafio.accounts.versioned` (PK `account_id`) a partir de `desafio.public.accounts`.
+- `desafio-enrichment` (`sql/01-enrichment.sql`): **temporal join** `transactions ⋈ accounts` com `FOR SYSTEM_TIME AS OF t.txn_time`, gravando em `desafio.transactions.enriched`.
+- `desafio-fraud-detection` (`sql/02-fraud-detection.sql`): regra `RULE_VELOCITY`, gravando em `desafio.fraud.detected`.
 
-Detecção de rajadas de 3 ou mais transações no mesmo cartão em menos de 60 segundos (`sql/02-fraud-detection.sql`):
+### Regra de fraude: velocidade em tempo real (`RULE_VELOCITY`)
+
+3 ou mais transações no mesmo cartão em menos de 60 segundos (`sql/02-fraud-detection.sql`):
 
 ```sql
-INSERT INTO `desafio.fraud.detected`
+INSERT INTO `desafio.fraud.detected` (
+  card_id,
+  account_id,
+  customer_id,
+  first_transaction_id,
+  last_transaction_id,
+  txn_count,
+  total_amount,
+  window_start,
+  window_end,
+  rule_name,
+  alert_ts
+)
 SELECT
-  card_id, account_id, customer_id, first_transaction_id, last_transaction_id,
-  CAST(txn_count AS INT) AS txn_count,
-  CAST(total_amount AS DECIMAL(15, 2)) AS total_amount,
-  window_start, window_end, rule_name, alert_ts
-FROM `desafio.transactions.raw`
-MATCH_RECOGNIZE (
-  PARTITION BY card_id
-  ORDER BY `$rowtime`
-  MEASURES
-    FIRST(T.account_id) AS account_id,
-    FIRST(T.transaction_id) AS first_transaction_id,
-    LAST(T.transaction_id) AS last_transaction_id,
-    COUNT(T.transaction_id) AS txn_count,
-    SUM(T.amount) AS total_amount,
-    FIRST(T.`$rowtime`) AS window_start,
-    LAST(T.`$rowtime`) AS window_end,
-    CAST('RULE_VELOCITY_60S' AS STRING) AS rule_name,
-    CURRENT_ROW_TIMESTAMP() AS alert_ts
-  ONE ROW PER MATCH
-  AFTER MATCH SKIP PAST LAST ROW
-  PATTERN (T{3,}?)
-  WITHIN INTERVAL '60' SECOND
-  DEFINE T AS TRUE
-);
+  m.card_id,
+  m.account_id,
+  a.customer_id,
+  m.first_transaction_id,
+  m.last_transaction_id,
+  CAST(m.txn_count AS INT) AS txn_count,
+  CAST(m.total_amount AS DECIMAL(15, 2)) AS total_amount,
+  m.window_start,
+  m.window_end,
+  m.rule_name,
+  m.alert_ts
+FROM (
+  SELECT card_id, account_id, first_transaction_id, last_transaction_id, txn_count, total_amount,
+         window_start, window_end, rule_name, alert_ts
+  FROM `desafio.public.transactions`
+  MATCH_RECOGNIZE (
+    PARTITION BY card_id
+    ORDER BY txn_time
+    MEASURES
+      FIRST(T.account_id) AS account_id,
+      FIRST(T.transaction_id) AS first_transaction_id,
+      LAST(T.transaction_id) AS last_transaction_id,
+      COUNT(T.transaction_id) AS txn_count,
+      SUM(T.amount) AS total_amount,
+      FIRST(T.txn_time) AS window_start,
+      LAST(T.txn_time) AS window_end,
+      CAST('RULE_VELOCITY_60S' AS STRING) AS rule_name,
+      CURRENT_ROW_TIMESTAMP() AS alert_ts
+    ONE ROW PER MATCH
+    AFTER MATCH SKIP PAST LAST ROW
+    PATTERN (T{3,}?)
+    WITHIN INTERVAL '60' SECOND
+    DEFINE
+      T AS TRUE
+  )
+) m
+JOIN `desafio.accounts.versioned` FOR SYSTEM_TIME AS OF m.window_end AS a
+  ON m.account_id = a.account_id;
 ```
 
-### Alerta Emitido vs. Transações de Origem (Evidência Real)
+**Decisão de projeto (aprendida na execução).** A primeira versão aplicava o `MATCH_RECOGNIZE` sobre o tópico `desafio.transactions.enriched`, isto é, depois do join. Com isso saíam só 4 dos 7 alertas esperados: os cartões 114, 228 e 320 ficavam sem alerta, embora suas transações estivessem corretas no `enriched`. Ao consultar `CURRENT_WATERMARK`, todas essas transações apareciam como **atrasadas** (o watermark da tabela já estava semanas à frente), então o Flink as descartava. A versão atual detecta o padrão **antes** do join e só depois busca o `customer_id` da conta (`FOR SYSTEM_TIME AS OF m.window_end`). Resultado: 7 de 7.
 
-**Alerta consumido do tópico `desafio.fraud.detected`:**
+### Alertas emitidos vs. transações de origem (evidência real)
+
+**Alertas lidos do tópico `desafio.fraud.detected`** (`scripts/evidence-flink.sh`, 7 alertas):
 
 ```json
-{
-  "card_id": 100,
-  "account_id": 100,
-  "customer_id": 100,
-  "first_transaction_id": 90001,
-  "last_transaction_id": 90003,
-  "txn_count": 3,
-  "total_amount": "850.50",
-  "window_start": "2026-11-17T14:56:56.788Z",
-  "window_end": "2026-11-17T14:56:56.792Z",
-  "rule_name": "RULE_VELOCITY_60S",
-  "alert_ts": "2026-11-17T14:57:03.999Z"
-}
+{"card_id":100,"customer_id":100,"first_transaction_id":1726,"last_transaction_id":1728,"txn_count":3,"total_amount":"4651/10","window_start":"2026-10-26T10:14:04Z","window_end":"2026-10-26T10:14:26Z","rule_name":"RULE_VELOCITY_60S"}
+{"card_id":114,"customer_id":114,"first_transaction_id":1216,"last_transaction_id":1218,"txn_count":3,"total_amount":"14187/25","window_start":"2026-10-19T06:48:07Z","window_end":"2026-10-19T06:48:17Z","rule_name":"RULE_VELOCITY_60S"}
+{"card_id":245,"customer_id":160,"first_transaction_id":117,"last_transaction_id":119,"txn_count":3,"total_amount":"2811/20","window_start":"2026-10-03T07:51:57Z","window_end":"2026-10-03T07:52:28Z","rule_name":"RULE_VELOCITY_60S"}
+{"card_id":320,"customer_id":9,"first_transaction_id":839,"last_transaction_id":841,"txn_count":3,"total_amount":"36763/100","window_start":"2026-10-14T01:14:27Z","window_end":"2026-10-14T01:14:46Z","rule_name":"RULE_VELOCITY_60S"}
+{"card_id":260,"customer_id":111,"first_transaction_id":1747,"last_transaction_id":1749,"txn_count":3,"total_amount":"4153/20","window_start":"2026-10-26T19:30:49Z","window_end":"2026-10-26T19:31:07Z","rule_name":"RULE_VELOCITY_60S"}
+{"card_id":228,"customer_id":63,"first_transaction_id":882,"last_transaction_id":884,"txn_count":3,"total_amount":"1618/25","window_start":"2026-10-14T14:34:23Z","window_end":"2026-10-14T14:34:59Z","rule_name":"RULE_VELOCITY_60S"}
+{"card_id":50,"customer_id":50,"first_transaction_id":2001,"last_transaction_id":2003,"txn_count":3,"total_amount":"1701/2","window_start":"2026-11-17T14:46:05Z","window_end":"2026-11-17T14:46:25Z","rule_name":"RULE_VELOCITY_60S"}
 ```
 
-**As 3 transações de origem que dispararam o alerta (mesmo `card_id=100`, intervalo de segundos):**
-- **Transação 1 (ID 90001):** `card_id=100` | `account_id=100` | `amount=R$ 150.00` | `merchant_id=10` | `status=APPROVED`
-- **Transação 2 (ID 90002):** `card_id=100` | `account_id=100` | `amount=R$ 280.50` | `merchant_id=12` | `status=APPROVED`
-- **Transação 3 (ID 90003):** `card_id=100` | `account_id=100` | `amount=R$ 420.00` | `merchant_id=15` | `status=APPROVED`
-- **Total da Rajada:** R$ 850.50 (3 transações no mesmo cartão em intervalo < 60s)
+**Transações de origem do alerta do cartão 100** (consulta real ao Postgres; as demais estão em `evidencias/04-alerta-fraude.txt`):
 
-**Por que esta peça:** O Apache Flink SQL na Confluent Cloud permite declarar lógica complexa de processamento de eventos (CEP via `MATCH_RECOGNIZE` e Temporal Joins) em SQL padrão declarativo, sem a necessidade de manter e orquestrar microsserviços customizados com estado em memória (como Redis/RocksDB). O Flink gerencia o estado das janelas com semântica *exactly-once* e tolerância a falhas nativa, permitindo detecção de fraude sub-segundo diretamente sobre o fluxo de streaming do Kafka.
+```
+--- card_id=100 (transações 1726 a 1728)
+ transaction_id | card_id | amount |  status  |         txn_ts         
+----------------+---------+--------+----------+------------------------
+           1726 |     100 | 193.20 | APPROVED | 2026-10-26 10:14:04+00
+           1727 |     100 |  36.29 | APPROVED | 2026-10-26 10:14:23+00
+           1728 |     100 | 235.61 | APPROVED | 2026-10-26 10:14:26+00
+(3 rows)
+```
+
+Os três eventos do cartão 100 ocorrem em 22 s (10:14:04 a 10:14:26), dentro da janela de 60 s.
+
+**Controle negativo:** Nenhum alerta para os cartões 126 e 86, como esperado.
+
+**Por que esta peça:** O Apache Flink SQL na Confluent Cloud permite declarar lógica complexa de processamento de eventos (CEP via `MATCH_RECOGNIZE` e Temporal Joins) em SQL padrão declarativo, sem a necessidade de manter e orquestrar microsserviços customizados com estado em memória (como Redis/RocksDB). O Flink gerencia o estado das janelas com semântica *exactly-once* e tolerância a falhas nativa, permitindo detecção de fraude diretamente sobre o fluxo de streaming do Kafka.
 
 ## Camada 5 — Consumo e Operação (Os Quatro Pilares)
 
@@ -361,17 +406,17 @@ $ confluent kafka topic consume desafio.fraud.detected \
 
 ```json
 {
-  "card_id": 100,
-  "account_id": 100,
-  "customer_id": 100,
-  "first_transaction_id": 90001,
-  "last_transaction_id": 90003,
-  "txn_count": 3,
-  "total_amount": "850.50",
-  "window_start": "2026-11-17T14:56:56.788Z",
-  "window_end": "2026-11-17T14:56:56.792Z",
+  "account_id": 50,
+  "alert_ts": "2026-11-23T13:52:09.989Z",
+  "card_id": 50,
+  "customer_id": 50,
+  "first_transaction_id": 2001,
+  "last_transaction_id": 2003,
   "rule_name": "RULE_VELOCITY_60S",
-  "alert_ts": "2026-11-17T14:57:03.999Z"
+  "total_amount": "1701/2",
+  "txn_count": 3,
+  "window_end": "2026-11-17T14:46:25Z",
+  "window_start": "2026-11-17T14:46:05Z"
 }
 ```
 
@@ -393,12 +438,12 @@ Evidência completa gerada por `scripts/07-operation.sh` em `evidencias/06-opera
 
 #### ① Observabilidade (Métricas e Lag)
 
-Medições reais coletadas da **Confluent Telemetry Metrics API** (`https://api.telemetry.confluent.cloud/v2/metrics/cloud/query` via `scripts/metrics.sh`):
+Medições reais coletadas da **Confluent Telemetry Metrics API** (`https://api.telemetry.confluent.cloud/v2/metrics/cloud/query` via `scripts/metrics.sh`), granularidade de 1 h, janela de 2026-11-16 a 2026-11-23 (`METRICS_START=2026-11-16T00:00:00Z ./scripts/metrics.sh`):
 
-- **Pico de Ingestão (`io.confluent.kafka.server/received_bytes`):** `1.084.678` bytes (~1,08 MB) na janela do snapshot inicial CDC e `446.568` bytes durante o streaming contínuo.
-- **Pico de Egress / Leitura (`io.confluent.kafka.server/sent_bytes`):** `4.740.106` bytes (~4,74 MB) no processamento das janelas e queries Flink SQL.
-- **Armazenamento Retido (`io.confluent.kafka.server/retained_bytes`):** `1.541.570` bytes (~1,54 MB) ativos no cluster.
-- **Lag de Consumo (`confluent kafka consumer group list`):** `0` mensagens de lag (todos os offsets lidos em tempo real).
+- **Pico de ingestão (`io.confluent.kafka.server/received_bytes`):** `1.084.678` bytes (~1,08 MB) em 2026-11-17 13:00 UTC, na carga inicial (*snapshot*) do CDC.
+- **Pico de egress (`io.confluent.kafka.server/sent_bytes`):** `7.019.047` bytes (~7,02 MB) em 2026-11-23 13:00 UTC, quando os statements Flink foram recriados e releram os tópicos desde o início (`earliest-offset`).
+- **Armazenamento retido (`io.confluent.kafka.server/retained_bytes`):** pico de `1.666.322` bytes (~1,67 MB); `1.386.533` bytes na última leitura.
+- **Lag por grupo (`confluent kafka consumer group list`):** **não medido.** Os grupos de consumo desta entrega são efêmeros (cada leitura de evidência usa um `--group` novo e termina), então a CLI devolve `None found` e não há lag a reportar. Em produção, o lag do consumidor de alertas viria da métrica `io.confluent.kafka.server/consumer_lag_offsets` por `consumer_group_id`.
 
 #### ② Segurança (Matriz de Menor Privilégio)
 
@@ -414,17 +459,24 @@ Medições reais coletadas da **Confluent Telemetry Metrics API** (`https://api.
 
 #### ③ Custos Reais e Alavancas de Otimização
 
-Faturamento real verificado via `confluent billing cost list`:
-```
-  Start Date |  End Date  | Granularity |  Line Type   | Price | Original Amount | Discount Amount | Amount
--------------+------------+-------------+--------------+-------+-----------------+-----------------+---------
-  2026-11-16 | 2026-11-17 | DAILY       | PROMO_CREDIT |       | $0.00           |                 | $0.00
-```
-*Total faturado: **US$ 0.00** (coberto pelo crédito de trial `FREETRIAL400`).*
+Consumo real medido com `confluent billing cost list --start-date 2026-11-01 --end-date 2026-11-24 -o json` (`scripts/cost.sh`), período de 2026-11-16 a 2026-11-24, somando as linhas por tipo:
 
-**Duas Alavancas de Redução de Custo na Confluent Cloud:**
-1. **Ajuste de Retenção e Storage:** Reduzir a retenção padrão de tópicos intermediários ou transientes (ex.: `desafio.transactions.append`, `desafio.transactions.raw`) de 7 dias para poucas horas (`retention.ms=14400000`), reduzindo diretamente a taxa de GB-hora retidos.
-2. **Dimensionamento de Flink Compute Units (CFU):** Flink Compute Pools são tarifados por CFU/hora. Em ambientes de desenvolvimento/teste, manter o pool dimensionado para o mínimo estrito (1 CFU) e suspender/destruir o pool fora do horário de trabalho via `./teardown.sh` elimina cobranças ociosas.
+| Item | Consumo bruto | % do total |
+|---|---|---|
+| Flink (CFU-hora) — `desafio-pool` | US$ 92.90 | 49.4% |
+| Conector CDC (task-hora) — `desafio-cdc` | US$ 72.00 | 38.3% |
+| Cluster Kafka Basic (CKU-hora) — `desafio-basic` | US$ 23.09 | 12.3% |
+| Rede (escrita) | US$ 0.07 | 0.0% |
+| Rede (leitura) | US$ 0.02 | 0.0% |
+| **Total bruto** | **US$ 188.07** | 100% |
+| Crédito promocional `FREETRIAL400` | US$ -188.07 | |
+| **Líquido cobrado no cartão** | **US$ 0.00** | |
+
+*O que gera custo é o tempo ligado, não o volume de dados: tráfego de rede somou centavos. Flink e conector respondem por cerca de 88% do total e cobram por hora enquanto existirem, com ou sem mensagens. O ritmo com tudo ligado ficou em torno de US$ 30 a 35 por dia.*
+
+**Duas alavancas de redução, escolhidas pelos números acima:**
+1. **Derrubar o que não está em uso (`./teardown.sh`).** Flink + conector + cluster não têm "pausa": só apagar interrompe a cobrança. Entre sessões de trabalho, o teardown elimina cerca de 100% do custo de hora; o `./setup.sh` recria tudo em poucos minutos.
+2. **Dimensionar o Flink ao mínimo e não manter statements sem consumidor.** O pool tem teto de 5 CFU (`--max-cfu 5`) e cada statement ativo consome CFU. Durante o desenvolvimento esta entrega chegou a ter um 4º statement rodando sem que nada lesse o seu resultado (removido); manter só os statements com consumidor, e o pool no menor teto que sustenta a carga, reduz a maior linha da fatura.
 
 #### ④ Confiabilidade Fim a Fim e Idempotência
 
@@ -456,16 +508,10 @@ Faturamento real verificado via `confluent billing cost list`:
 
 ## Custo total e teardown
 
-**Custo total declarado:** **US$ 0.00** (coberto pelo crédito promocional `FREETRIAL400` da Confluent Cloud).
-
-Consulta real de faturamento via CLI (`scripts/cost.sh`):
+**Custo declarado:** consumo bruto de **US$ 188.07** no período 2026-11-16 a 2026-11-24, **totalmente coberto** pelo crédito promocional `FREETRIAL400` (US$ -188.07), ou seja, **US$ 0.00 cobrados no cartão**. Detalhamento por item no pilar ③ acima. O valor cresce enquanto o ambiente estiver ligado: o número final é o da última consulta feita **depois** do `./teardown.sh`, porque o billing da Confluent tem defasagem.
 
 ```bash
-$ confluent billing cost list --start-date 2026-11-01 --end-date 2026-11-17
-  Start Date |  End Date  | Granularity |  Line Type   | Product | Price | Original Amount | Discount Amount | Amount
--------------+------------+-------------+--------------+---------+-------+-----------------+-----------------+---------
-  2026-11-16 | 2026-11-17 | DAILY       | PROMO_CREDIT |         |       | $0.00           |                 | $0.00
-  2026-11-17 | 2026-11-18 | DAILY       | PROMO_CREDIT |         |       | $0.00           |                 | $0.00
+$ ./scripts/cost.sh    # confluent billing cost list --start-date ... --end-date ...
 ```
 
 ### Verificação de Listas Vazias pós-Teardown

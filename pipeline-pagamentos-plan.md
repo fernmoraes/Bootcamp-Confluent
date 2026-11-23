@@ -21,7 +21,7 @@
 > | 2 Fundação Confluent | feito |
 > | 3 Contrato de dados (Schema Registry) | feito |
 > | 4 Ingestão CDC | feito |
-> | 5 Flink SQL | feito |
+> | 5 Flink SQL | feito (refeito em 2026-11-23, pipeline real, 7/7 alertas) |
 > | 6 Consumo | feito |
 > | 7 Operação (métricas, acesso, custo, confiabilidade) | feito |
 > | 8 setup/teardown (automação completa) | feito |
@@ -189,12 +189,16 @@ evidencias/ # saídas capturadas (envelopes CDC, alertas, listas vazias)
   5. Injetar uma rajada controlada de 3 transações no mesmo cartão, consumir o alerta e correlacionar as 3 transações de origem.
   6. Verificar na documentação: suporte a `MATCH_RECOGNIZE` e a temporal join no Flink do Confluent Cloud, e o comportamento do `PATTERN` com `{3,}?` e `WITHIN`.
 - **Relevant Context:** PDF, Camada 4; pasta `sql/`.
-- **Status:** `[x] done`
+- **Status:** `[x] done` (reaberta e refeita em 2026-11-23, ver "Correção")
 - **Notas para as próximas sub-tarefas:**
   - **Compute pool Flink:** `desafio-pool` (`lfcp-w7wpx0g`, 5 max CFU, aws/us-east-1).
-  - **Statements em execução:** `desafio-accounts-populate` (RUNNING), `desafio-transactions-stream` (RUNNING), `desafio-enrichment` (RUNNING), `desafio-fraud-detection` (RUNNING). Todos com `--property sql.tables.scan.idle-timeout=5s`.
-  - **Regra de velocidade e alerta emitido:** `MATCH_RECOGNIZE` com `PARTITION BY card_id`, `ORDER BY $rowtime`, `PATTERN (T{3,}?) WITHIN INTERVAL '60' SECOND`. O alerta capturado no tópico `desafio.fraud.detected` detectou rajada de 3 transações no cartão 100 com total de R$ 850.50 (transações 90001, 90002, 90003).
-  - **Arquivos:** `sql/01-enrichment.sql`, `sql/02-fraud-detection.sql`, `scripts/05-flink.sh` (executável e idempotente), `scripts/evidence-flink.sh`, `evidencias/04-alerta-fraude.txt`.
+  - **Statements em execução (3):** `desafio-accounts-populate`, `desafio-enrichment`, `desafio-fraud-detection`, todos RUNNING e com `--property sql.tables.scan.idle-timeout=5s`. Os 3 sobem a partir de `scripts/05-flink.sh` (idempotente) e dos arquivos de `sql/`.
+  - **CORREÇÃO (2026-11-23):** a 1ª versão desta sub-tarefa NÃO era reproduzível. O ambiente tinha statement `desafio-transactions-stream`, tópicos `raw/append/stream` e um `insert-burst` que injetava 3 transações (IDs 90001-90003) direto no Flink; o alerta "R$ 850.50" da evidência veio desses dados manuais, não do Postgres. Tudo isso foi removido (statements, tópicos e subjects do Schema Registry) e o pipeline foi refeito pelo caminho real.
+  - **Ajustes de tabela feitos por DDL no `05-flink.sh`:** `desafio.public.transactions` -> `changelog.mode='append'`, coluna `txn_time` (de `txn_ts` STRING) como tempo de evento + watermark de 5 s; `desafio.accounts.versioned` com PK e `updated_at` como tempo de evento; watermark em `desafio.transactions.enriched.txn_ts`. Sem isso o join comum falhava com "sink doesn't support consuming update and delete changes".
+  - **Regra de fraude (decisão validada):** o `MATCH_RECOGNIZE` roda ANTES do join, direto em `desafio.public.transactions` (`ORDER BY txn_time`), e só depois faz `JOIN ... FOR SYSTEM_TIME AS OF m.window_end` para pegar `customer_id`. Aplicar o padrão sobre `desafio.transactions.enriched` perdia 3 dos 7 alertas (cartões 114, 228, 320): `CURRENT_WATERMARK` mostrou as transações como atrasadas. Resultado final: 7 de 7 alertas (cartões 100, 114, 228, 245, 260, 320 do seed + 50 da rajada de teste inserida no Postgres) e nenhum alerta para 126 e 86.
+  - **Armadilha de execução:** `DESCRIBE`/`SELECT` no Flink só devolvem linhas pela API REST (`/sql/v1/.../statements/<nome>/results`); a CLI não imprime resultado. Foi usada uma Flink API key TEMPORÁRIA (apagada ao final). Statements `SELECT` ad hoc só avançam watermark com `sql.tables.scan.idle-timeout=5s`.
+  - **Atenção `enriched`:** o tópico `desafio.transactions.enriched` é alimentado (temporal join) mas hoje NINGUÉM o lê; é saída analítica. O watermark dele atrasa em relação à fonte (1 partição vs 6 de `accounts.versioned`).
+  - **Arquivos:** `sql/01-enrichment.sql`, `sql/02-fraud-detection.sql`, `scripts/05-flink.sh`, `scripts/evidence-flink.sh` (agora SÓ com consultas reais: Kafka + Postgres), `evidencias/04-alerta-fraude.txt`.
 
 ### 6. Consumo
 - **Intent:** mostrar quem lê o resultado usando a identidade `desafio-consumer`.
@@ -203,7 +207,7 @@ evidencias/ # saídas capturadas (envelopes CDC, alertas, listas vazias)
   1. Script `scripts/consume-alerts.sh` usando as credenciais do consumer.
   2. Teste negativo: tentativa de produzir com a identidade do consumer, com a saída de erro capturada.
 - **Relevant Context:** PDF, Camadas 1 e 5 (Segurança).
-- **Status:** `[x] done`
+- **Status:** `[x] done` (evidência regerada em 2026-11-23 com alerta real do pipeline)
 - **Notas:**
   - Criados `scripts/06-consume.sh` e `scripts/consume-alerts.sh` usando a service account `desafio-consumer`.
   - Executado teste negativo de escrita: tentativa de produzir com a identidade do consumidor é rejeitada com `failed to produce offset -1: Broker: Topic authorization failed`, comprovando ACLs de menor privilégio.
@@ -215,9 +219,9 @@ evidencias/ # saídas capturadas (envelopes CDC, alertas, listas vazias)
 - **Status:** `[x] done`
 - **Notas:**
   - Criados `scripts/metrics.sh`, `scripts/cost.sh` e `scripts/07-operation.sh`.
-  - Observabilidade: Confluent Telemetry Metrics API consultada com sucesso (pico de `received_bytes`: 1.084.678 B; `sent_bytes`: 4.740.106 B; `retained_bytes`: 1.541.570 B; lag: 0).
+  - Observabilidade: Confluent Telemetry Metrics API consultada com sucesso (janela 2026-11-16 a 11-23 via `METRICS_START`: pico `received_bytes` 1.084.678 B; `sent_bytes` 7.019.047 B; `retained_bytes` 1.666.322 B). Lag por grupo NÃO medido: grupos efêmeros, a CLI devolve `None found`.
   - Segurança: Matriz completa de SAs, ACLs Kafka, RBAC de Schema Registry/DataSteward e permissões mínimas no Postgres.
-  - Custos: Faturamento medido via `confluent billing cost list` ($0.00 com créditos) + 2 alavancas de redução (retenção de tópicos e dimensionamento de CFU Flink).
+  - Custos: Faturamento medido via `confluent billing cost list`: consumo BRUTO de US$ 188.07 (2026-11-16 a 11-24; Flink 92.90, conector 72.00, cluster 23.09, rede ~0.09), coberto pelo crédito `FREETRIAL400` (líquido US$ 0.00). O valor cresce enquanto o ambiente estiver ligado: reconsultar DEPOIS do teardown. Alavancas: (1) teardown entre sessões; (2) Flink no menor pool e sem statements sem consumidor.
   - Confiabilidade: Matriz trecho a trecho detalhando tolerâncias a falhas e o elo fraco na aplicação consumidora (mitigação via idempotência).
   - Evidência real salva em `evidencias/06-operacao.txt`.
 
