@@ -1,54 +1,58 @@
-# Camada 1 — Fundação (2026-11-16T18:05Z)
+# Camada 1 — Fundação (2026-11-23T17:43Z)
 
 == environment e cluster
   Current |     ID     |     Name      | Stream Governance Package  
-          | env-6nj08j | desafio-final | ESSENTIALS                 
-| ID                   | lkc-yow5gwo                                              |
-| Name                 | desafio-basic                                            |
-| Type                 | BASIC                                                    |
-| Cloud                | aws                                                      |
-| Region               | us-east-1                                                |
-| Availability         | single-zone                                              |
-| Status               | UP                                                       |
+          | env-p3nr7m | desafio-final | ESSENTIALS                 
+| ID                   | lkc-9ky0x9m                                                  |
+| Name                 | desafio-basic                                                |
+| Type                 | BASIC                                                        |
+| Cloud                | aws                                                          |
+| Region               | us-east-1                                                    |
+| Availability         | single-zone                                                  |
+| Status               | UP                                                           |
 
 == Schema Registry
-| Cluster                        | lsrc-w7w0zw5                                                         |
+| Cluster                        | lsrc-j57ko6p                                                         |
 | Endpoint URL                   | https://psrc-4m23250.us-east-1.aws.confluent.cloud                   |
-| Private Endpoint URL           | https://lsrc-w7w0zw5.us-east-1.aws.private.confluent.cloud           |
-| Private Regional Endpoint URLs | us-east-1=https://lsrc-w7w0zw5.us-east-1.aws.private.confluent.cloud |
+| Private Endpoint URL           | https://lsrc-j57ko6p.us-east-1.aws.private.confluent.cloud           |
+| Private Regional Endpoint URLs | us-east-1=https://lsrc-j57ko6p.us-east-1.aws.private.confluent.cloud |
 | Catalog Endpoint URL           | https://psrc-4m23250.us-east-1.aws.confluent.cloud                   |
 | Global Compatibility           | BACKWARD                                                             |
 | Mode                           | READWRITE                                                            |
 
 == confluent iam service-account list
       ID     |       Name       |          Description            
-  sa-7p15z9p | desafio-producer | Escreve nos topicos desafio-*   
-  sa-o27kynx | desafio-consumer | Le os topicos desafio-*         
+  sa-0jm6vv2 | desafio-producer | Escreve nos topicos desafio*    
+  sa-mkxgqqq | desafio-consumer | Le os topicos desafio*          
 
-== ACLs Kafka de desafio-producer (sa-7p15z9p)
-     Principal    | Permission |    Operation     | Resource Type | Resource Name | Pattern Type  
-------------------+------------+------------------+---------------+---------------+---------------
-  User:sa-7p15z9p | ALLOW      | CREATE           | TOPIC         | desafio       | PREFIXED      
-  User:sa-7p15z9p | ALLOW      | DESCRIBE         | CLUSTER       | kafka-cluster | LITERAL       
-  User:sa-7p15z9p | ALLOW      | DESCRIBE         | TOPIC         | desafio       | PREFIXED      
-  User:sa-7p15z9p | ALLOW      | DESCRIBE_CONFIGS | CLUSTER       | kafka-cluster | LITERAL       
-  User:sa-7p15z9p | ALLOW      | WRITE            | TOPIC         | desafio       | PREFIXED      
+== ACLs Kafka de desafio-producer (sa-0jm6vv2)
+     Principal    | Permission |    Operation     | Resource Type |    Resource Name     | Pattern Type  
+------------------+------------+------------------+---------------+----------------------+---------------
+  User:sa-0jm6vv2 | ALLOW      | CREATE           | TOPIC         | __debezium-heartbeat | PREFIXED      
+  User:sa-0jm6vv2 | ALLOW      | CREATE           | TOPIC         | desafio              | PREFIXED      
+  User:sa-0jm6vv2 | ALLOW      | DESCRIBE         | CLUSTER       | kafka-cluster        | LITERAL       
+  User:sa-0jm6vv2 | ALLOW      | DESCRIBE         | TOPIC         | __debezium-heartbeat | PREFIXED      
+  User:sa-0jm6vv2 | ALLOW      | DESCRIBE         | TOPIC         | desafio              | PREFIXED      
+  User:sa-0jm6vv2 | ALLOW      | DESCRIBE_CONFIGS | CLUSTER       | kafka-cluster        | LITERAL       
+  User:sa-0jm6vv2 | ALLOW      | WRITE            | TOPIC         | __debezium-heartbeat | PREFIXED      
+  User:sa-0jm6vv2 | ALLOW      | WRITE            | TOPIC         | desafio              | PREFIXED      
 -- role bindings (Schema Registry)
      ID     |    Principal    | Email |      Role      | Environment | Cloud Cluster |  Cluster Type   | Logical Cluster | Resource Type |  Name   | Pattern Type  
 ------------+-----------------+-------+----------------+-------------+---------------+-----------------+-----------------+---------------+---------+---------------
-  rb-A8QwbN | User:sa-7p15z9p |       | DeveloperWrite | env-6nj08j  |               | Schema Registry | lsrc-w7w0zw5    | Subject       | desafio | PREFIXED      
-  rb-G3bEPo | User:sa-7p15z9p |       | DeveloperRead  | env-6nj08j  |               | Schema Registry | lsrc-w7w0zw5    | Subject       | desafio | PREFIXED      
+  rb-7m94DY | User:sa-0jm6vv2 |       | DeveloperWrite | env-p3nr7m  |               | Schema Registry | lsrc-j57ko6p    | Subject       | desafio | PREFIXED      
+  rb-X75d3m | User:sa-0jm6vv2 |       | DataSteward    | env-p3nr7m  |               |                 |                 |               |         |               
+  rb-jzBEMr | User:sa-0jm6vv2 |       | DeveloperRead  | env-p3nr7m  |               | Schema Registry | lsrc-j57ko6p    | Subject       | desafio | PREFIXED      
 
-== ACLs Kafka de desafio-consumer (sa-o27kynx)
+== ACLs Kafka de desafio-consumer (sa-mkxgqqq)
      Principal    | Permission | Operation | Resource Type | Resource Name | Pattern Type  
 ------------------+------------+-----------+---------------+---------------+---------------
-  User:sa-o27kynx | ALLOW      | DESCRIBE  | TOPIC         | desafio       | PREFIXED      
-  User:sa-o27kynx | ALLOW      | READ      | GROUP         | desafio-      | PREFIXED      
-  User:sa-o27kynx | ALLOW      | READ      | TOPIC         | desafio       | PREFIXED      
+  User:sa-mkxgqqq | ALLOW      | DESCRIBE  | TOPIC         | desafio       | PREFIXED      
+  User:sa-mkxgqqq | ALLOW      | READ      | GROUP         | desafio-      | PREFIXED      
+  User:sa-mkxgqqq | ALLOW      | READ      | TOPIC         | desafio       | PREFIXED      
 -- role bindings (Schema Registry)
      ID     |    Principal    | Email |     Role      | Environment | Cloud Cluster |  Cluster Type   | Logical Cluster | Resource Type |  Name   | Pattern Type  
 ------------+-----------------+-------+---------------+-------------+---------------+-----------------+-----------------+---------------+---------+---------------
-  rb-B3qDrP | User:sa-o27kynx |       | DeveloperRead | env-6nj08j  |               | Schema Registry | lsrc-w7w0zw5    | Subject       | desafio | PREFIXED      
+  rb-yDPlRL | User:sa-mkxgqqq |       | DeveloperRead | env-p3nr7m  |               | Schema Registry | lsrc-j57ko6p    | Subject       | desafio | PREFIXED      
 
 == prova de menor privilégio (comandos reais com as API keys de cada SA)
 producer escreve em desafio.probe                              PERMITIDO

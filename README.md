@@ -86,17 +86,17 @@ Identidades: `desafio-producer` (WRITE em `desafio*`), `desafio-consumer` (READ 
 ```
 $ confluent iam service-account list
       ID     |       Name       |          Description
-  sa-7p15z9p | desafio-producer | Escreve nos topicos desafio-*
-  sa-o27kynx | desafio-consumer | Le os topicos desafio-*
+  sa-0jm6vv2 | desafio-producer | Escreve nos topicos desafio-*
+  sa-mkxgqqq | desafio-consumer | Le os topicos desafio-*
 
-$ confluent kafka acl list --service-account sa-7p15z9p     # desafio-producer
+$ confluent kafka acl list --service-account sa-0jm6vv2     # desafio-producer
   ALLOW | CREATE            | TOPIC   | desafio       | PREFIXED
   ALLOW | DESCRIBE          | TOPIC   | desafio       | PREFIXED
   ALLOW | WRITE             | TOPIC   | desafio       | PREFIXED
   ALLOW | DESCRIBE          | CLUSTER | kafka-cluster | LITERAL
   ALLOW | DESCRIBE_CONFIGS  | CLUSTER | kafka-cluster | LITERAL
 
-$ confluent kafka acl list --service-account sa-o27kynx     # desafio-consumer
+$ confluent kafka acl list --service-account sa-mkxgqqq     # desafio-consumer
   ALLOW | READ     | TOPIC | desafio  | PREFIXED
   ALLOW | DESCRIBE | TOPIC | desafio  | PREFIXED
   ALLOW | READ     | GROUP | desafio- | PREFIXED
@@ -325,6 +325,7 @@ $ confluent flink statement list
 
 - `desafio-accounts-populate`: alimenta `desafio.accounts.versioned` (PK `account_id`) a partir de `desafio.public.accounts`.
 - `desafio-enrichment` (`sql/01-enrichment.sql`): **temporal join** `transactions ⋈ accounts` com `FOR SYSTEM_TIME AS OF t.txn_time`, gravando em `desafio.transactions.enriched`.
+  - **Limitação conhecida, medida e NÃO resolvida:** neste ciclo `desafio.transactions.enriched` parou em **1.042 de 2.000** transações (122 das 240 contas), sem crescer em mais de 1 minuto de espera. Medi lendo o tópico com `SELECT COUNT(DISTINCT transaction_id) ... /*+ OPTIONS('scan.bounded.mode'='latest-offset') */`: origem 2.000, `enriched` 1.042, sem duplicatas. O que já foi descartado: `accounts.versioned` tem as 240 contas; nenhuma transação chega atrasada ao watermark (0 de 2.000 em ordem de `transaction_id`); o statement está `RUNNING` sem erro. A causa não foi identificada (suspeita não confirmada: watermark do lado das contas, que tem 6 partições e um único `updated_at` fixo, 2026-10-01). **Isso não afeta a regra de fraude**, que lê `desafio.public.transactions` direto e sofre o join só depois (6 de 6 alertas verificados). Mas o tópico `enriched` não deve ser apresentado como completo.
 - `desafio-fraud-detection` (`sql/02-fraud-detection.sql`): regra `RULE_VELOCITY`, gravando em `desafio.fraud.detected`.
 
 ### Regra de fraude: velocidade em tempo real (`RULE_VELOCITY`)
