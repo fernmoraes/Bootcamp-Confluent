@@ -193,7 +193,7 @@ Status do conector na Confluent Cloud:
 ```
 Connector Details
 +--------+-------------+
-| ID     | lcc-9kyqqw7 |
+| ID     | lcc-9ky0x6m |
 | Name   | desafio-cdc |
 | Status | RUNNING     |
 | Type   | source      |
@@ -212,16 +212,21 @@ Captura de ciclo completo `INSERT` $\rightarrow$ `UPDATE` $\rightarrow$ `DELETE`
   "before": null,
   "after": {
     "desafio.public.customers.Value": {
-      "customer_id": 9999,
-      "full_name": "CDC Test Customer",
-      "email": "cdc.test@bootcamp.com",
-      "phone": "+5511988887777",
-      "birth_date": 5613,
-      "city": "Curitiba",
-      "created_at": "2026-11-17T13:06:15.207583Z"
+      "birth_date": 8236,
+      "city": "Sao Paulo",
+      "created_at": "2026-11-23T17:11:32.497367Z",
+      "customer_id": 99999,
+      "email": "cdc.probe@bootcamp.com",
+      "full_name": "CDC Probe User",
+      "phone": "+5511999998888"
     }
   },
-  "source": { "connector": "postgresql", "db": "neondb", "table": "customers", "snapshot": "false" }
+  "source": {
+    "connector": "postgresql",
+    "db": "neondb",
+    "table": "customers",
+    "snapshot": "false"
+  }
 }
 ```
 
@@ -232,40 +237,65 @@ Captura de ciclo completo `INSERT` $\rightarrow$ `UPDATE` $\rightarrow$ `DELETE`
   "op": "u",
   "before": {
     "desafio.public.customers.Value": {
-      "customer_id": 9999,
-      "full_name": "CDC Test Customer",
-      "email": "cdc.test@bootcamp.com",
-      "city": "Curitiba"
+      "birth_date": 8236,
+      "city": "Sao Paulo",
+      "created_at": "2026-11-23T17:11:32.497367Z",
+      "customer_id": 99999,
+      "email": "cdc.probe@bootcamp.com",
+      "full_name": "CDC Probe User",
+      "phone": "+5511999998888"
     }
   },
   "after": {
     "desafio.public.customers.Value": {
-      "customer_id": 9999,
-      "full_name": "CDC Test Customer",
-      "email": "cdc.updated@bootcamp.com",
-      "city": "Florianopolis"
+      "birth_date": 8236,
+      "city": "Belo Horizonte",
+      "created_at": "2026-11-23T17:11:32.497367Z",
+      "customer_id": 99999,
+      "email": "cdc.probe.updated@bootcamp.com",
+      "full_name": "CDC Probe User",
+      "phone": "+5511999998888"
     }
   },
-  "source": { "connector": "postgresql", "db": "neondb", "table": "customers", "snapshot": "false" }
+  "source": {
+    "connector": "postgresql",
+    "db": "neondb",
+    "table": "customers",
+    "snapshot": "false"
+  }
 }
 ```
 
-**3. `op=d` (DELETE): `before` presente, `after=null` seguido de tombstone:**
+**3. `op=d` (DELETE): `before` presente e `after=null`:**
 
 ```json
 {
   "op": "d",
   "before": {
     "desafio.public.customers.Value": {
-      "customer_id": 9999,
-      "full_name": "CDC Test Customer",
-      "email": "cdc.updated@bootcamp.com",
-      "city": "Florianopolis"
+      "birth_date": 8236,
+      "city": "Belo Horizonte",
+      "created_at": "2026-11-23T17:11:32.497367Z",
+      "customer_id": 99999,
+      "email": "cdc.probe.updated@bootcamp.com",
+      "full_name": "CDC Probe User",
+      "phone": "+5511999998888"
     }
   },
   "after": null,
-  "source": { "connector": "postgresql", "db": "neondb", "table": "customers", "snapshot": "false" }
+  "source": {
+    "connector": "postgresql",
+    "db": "neondb",
+    "table": "customers",
+    "snapshot": "false"
+  }
 }
+```
+
+**4. Tombstone (mensagem com a mesma chave e valor nulo, logo após o `op=d`)**, lida do tópico com `--key-format avro --print-key`:
+
+```json
+{"key": {"customer_id": 99999}, "value": null}
 ```
 
 **Por que esta peça:** O conector Debezium gerenciado (`PostgresCdcSourceV2`) lê o Write-Ahead Log (WAL) do Postgres de forma não intrusiva, sem impacto de polling de queries sobre o banco operacional. O `REPLICA IDENTITY FULL` garante que transições de estado (`before` e `after`) estejam presentes nos eventos de UPDATE e DELETE, permitindo que motores de stream como Flink SQL mantenham changelogs consistentes. O parâmetro `heartbeat.interval.ms=60000` avança periodicamente o LSN no slot de replicação mesmo sem novas transações de negócio, evitando acúmulo desnecessário de WAL no Neon e prevenindo estouro de armazenamento.
@@ -274,7 +304,7 @@ Captura de ciclo completo `INSERT` $\rightarrow$ `UPDATE` $\rightarrow$ `DELETE`
 
 Processamento de stream contínuo com Apache Flink gerenciado na Confluent Cloud (Compute Pool `desafio-pool`, região `aws/us-east-1`). Statements em `sql/` com a propriedade de execução `sql.tables.scan.idle-timeout=5s` (evita travamento de janelas temporais por partições ociosas). Script de automação: `scripts/05-flink.sh`. Evidência completa: `evidencias/04-alerta-fraude.txt`.
 
-**O caminho é o real, de ponta a ponta:** Postgres → conector CDC → `desafio.public.transactions` → Flink → `desafio.fraud.detected`. Nenhuma transação foi injetada à mão no Flink: os alertas abaixo nascem das 2000 transações do seed (mais a rajada de teste do cartão 50, inserida no Postgres).
+**O caminho é o real, de ponta a ponta:** Postgres → conector CDC → `desafio.public.transactions` → Flink → `desafio.fraud.detected`. Nenhuma transação foi injetada à mão no Flink: os alertas abaixo nascem das 2000 transações do seed.
 
 ### Tabelas e tempo de evento (`scripts/05-flink.sh`)
 
@@ -356,11 +386,11 @@ JOIN `desafio.accounts.versioned` FOR SYSTEM_TIME AS OF m.window_end AS a
   ON m.account_id = a.account_id;
 ```
 
-**Decisão de projeto (aprendida na execução).** A primeira versão aplicava o `MATCH_RECOGNIZE` sobre o tópico `desafio.transactions.enriched`, isto é, depois do join. Com isso saíam só 4 dos 7 alertas esperados: os cartões 114, 228 e 320 ficavam sem alerta, embora suas transações estivessem corretas no `enriched`. Ao consultar `CURRENT_WATERMARK`, todas essas transações apareciam como **atrasadas** (o watermark da tabela já estava semanas à frente), então o Flink as descartava. A versão atual detecta o padrão **antes** do join e só depois busca o `customer_id` da conta (`FOR SYSTEM_TIME AS OF m.window_end`). Resultado: 7 de 7.
+**Decisão de projeto (aprendida na execução).** A primeira versão aplicava o `MATCH_RECOGNIZE` sobre o tópico `desafio.transactions.enriched`, isto é, depois do join. Com isso saíam só 3 dos 6 alertas esperados: os cartões 114, 228 e 320 ficavam sem alerta, embora suas transações estivessem corretas no `enriched`. Ao consultar `CURRENT_WATERMARK`, todas essas transações apareciam como **atrasadas** (o watermark da tabela já estava semanas à frente), então o Flink as descartava. A versão atual detecta o padrão **antes** do join e só depois busca o `customer_id` da conta (`FOR SYSTEM_TIME AS OF m.window_end`). Resultado: 6 de 6 rajadas do seed (cartões 100, 114, 228, 245, 260, 320), sem alerta para 126 e 86.
 
 ### Alertas emitidos vs. transações de origem (evidência real)
 
-**Alertas lidos do tópico `desafio.fraud.detected`** (`scripts/evidence-flink.sh`, 7 alertas):
+**Alertas lidos do tópico `desafio.fraud.detected`** (`scripts/evidence-flink.sh`, 6 alertas, um por rajada do seed):
 
 ```json
 {"card_id":100,"customer_id":100,"first_transaction_id":1726,"last_transaction_id":1728,"txn_count":3,"total_amount":"4651/10","window_start":"2026-10-26T10:14:04Z","window_end":"2026-10-26T10:14:26Z","rule_name":"RULE_VELOCITY_60S"}
@@ -369,7 +399,6 @@ JOIN `desafio.accounts.versioned` FOR SYSTEM_TIME AS OF m.window_end AS a
 {"card_id":320,"customer_id":9,"first_transaction_id":839,"last_transaction_id":841,"txn_count":3,"total_amount":"36763/100","window_start":"2026-10-14T01:14:27Z","window_end":"2026-10-14T01:14:46Z","rule_name":"RULE_VELOCITY_60S"}
 {"card_id":260,"customer_id":111,"first_transaction_id":1747,"last_transaction_id":1749,"txn_count":3,"total_amount":"4153/20","window_start":"2026-10-26T19:30:49Z","window_end":"2026-10-26T19:31:07Z","rule_name":"RULE_VELOCITY_60S"}
 {"card_id":228,"customer_id":63,"first_transaction_id":882,"last_transaction_id":884,"txn_count":3,"total_amount":"1618/25","window_start":"2026-10-14T14:34:23Z","window_end":"2026-10-14T14:34:59Z","rule_name":"RULE_VELOCITY_60S"}
-{"card_id":50,"customer_id":50,"first_transaction_id":2001,"last_transaction_id":2003,"txn_count":3,"total_amount":"1701/2","window_start":"2026-11-17T14:46:05Z","window_end":"2026-11-17T14:46:25Z","rule_name":"RULE_VELOCITY_60S"}
 ```
 
 **Transações de origem do alerta do cartão 100** (consulta real ao Postgres; as demais estão em `evidencias/04-alerta-fraude.txt`):
@@ -406,17 +435,17 @@ $ confluent kafka topic consume desafio.fraud.detected \
 
 ```json
 {
-  "account_id": 50,
-  "alert_ts": "2026-11-23T13:52:09.989Z",
-  "card_id": 50,
-  "customer_id": 50,
-  "first_transaction_id": 2001,
-  "last_transaction_id": 2003,
+  "account_id": 214,
+  "alert_ts": "2026-11-23T17:06:00.334Z",
+  "card_id": 320,
+  "customer_id": 9,
+  "first_transaction_id": 839,
+  "last_transaction_id": 841,
   "rule_name": "RULE_VELOCITY_60S",
-  "total_amount": "1701/2",
+  "total_amount": "36763/100",
   "txn_count": 3,
-  "window_end": "2026-11-17T14:46:25Z",
-  "window_start": "2026-11-17T14:46:05Z"
+  "window_end": "2026-10-14T01:14:46Z",
+  "window_start": "2026-10-14T01:14:27Z"
 }
 ```
 
@@ -482,7 +511,7 @@ Consumo real medido com `confluent billing cost list --start-date 2026-11-01 --e
 
 | Trecho do Pipeline | Garantia de Entrega | Mecanismo de Tolerância a Falhas |
 |---|---|---|
-| **Postgres (WAL) $\rightarrow$ CDC Debezium** | *At-least-once* | Replication slot com LSN confirmado após ACK no Kafka. Em caso de reinício, o conector retoma do último LSN seguro. |
+| **Postgres (WAL) $\rightarrow$ CDC Debezium** | *At-least-once* | Replication slot com LSN confirmado após ACK no Kafka. **Ponto frágil, observado na prática:** se o slot some no Postgres (WAL descartado ou slot recriado), o conector vai para `FAILED` (`USER_ACTIONABLE_ERROR`) e não retoma sozinho. Por isso `connectors/cdc.json` usa `snapshot.mode=when_needed`; ver "Teste de recuperação" abaixo. |
 | **CDC $\rightarrow$ Tópicos Kafka** | *At-least-once* | Produtor com `acks=all`, $RF=3$ e particionamento estrito por chave (`card_id`, `account_id`, `customer_id`). |
 | **Kafka $\rightarrow$ Flink SQL $\rightarrow$ Tópicos Alerta** | *Exactly-once* | Checkpoints periódicos de estado e transações Kafka no sink Flink. |
 | **Tópico de Alerta $\rightarrow$ Consumidor Final** | *At-least-once* | **[ELO FRACO]**: A entrega da mensagem é garantida, mas o efeito externo (bloqueio do cartão, envio de notificação) exige controle de **idempotência na aplicação consumidora** chaveado por `(card_id, first_transaction_id, window_start)` para prevenir duplicação em rebalances. |
@@ -506,7 +535,38 @@ Consumo real medido com `confluent billing cost list --start-date 2026-11-01 --e
 
 **Segredos:** as API keys ficam em `.state` (gitignored). O teardown apaga o `.state` junto com as keys; o `setup.sh` gera keys novas.
 
+### Teste de recuperação do conector (slot derrubado de propósito)
+
+Na primeira sessão o conector `desafio-cdc` terminou `FAILED` com o slot de replicação ausente no Postgres (causa do sumiço do slot **não identificada**). A mensagem do conector sugeria `snapshot.mode=when_needed`. Para verificar, o conector foi atualizado (`confluent connect cluster update --config snapshot.mode=when_needed`) e o slot `desafio_cdc_slot` foi derrubado de propósito com o conector ligado (`pg_drop_replication_slot`). Saída observada (estado do conector | slot no Postgres):
+
+```
+[antes]      {"c":"RUNNING","t":["RUNNING"]} | desafio_cdc_slot active=true
+[slot caiu]  SLOT AUSENTE
+[+30s]       {"c":"FAILED","t":["USER_ACTIONABLE_ERROR"]} | SLOT AUSENTE
+[+60s]       {"c":"FAILED","t":["USER_ACTIONABLE_ERROR"]} | desafio_cdc_slot active=false
+[+120s]      {"c":"FAILED","t":["USER_ACTIONABLE_ERROR"]} | desafio_cdc_slot active=true
+[+180s]      {"c":"RUNNING","t":["RUNNING"]} | desafio_cdc_slot active=true
+[+240s]      {"c":"RUNNING","t":["RUNNING"]} | desafio_cdc_slot active=true
+```
+
+Com `when_needed` o conector se recuperou sozinho em cerca de 3 minutos (recriou o slot e refez o snapshot). Depois disso um novo ciclo INSERT/UPDATE/DELETE voltou a chegar ao Kafka (`op=c`, `u`, `d` e tombstone). Sem essa opção, o mesmo cenário deixa o conector em `FAILED` até intervenção manual. Como o snapshot é refeito, o consumidor pode ver registros repetidos: a idempotência continua sendo responsabilidade da aplicação (ver tabela acima).
+
+### Problemas encontrados e corrigidos no `setup.sh` (execução do zero)
+
+Rodar `./setup.sh` do zero expôs 5 falhas, todas corrigidas e reverificadas até o `setup.sh` terminar com `exit=0` e `./scripts/status.sh` mostrar conector `RUNNING` e 3 statements Flink `RUNNING`:
+
+1. `01-foundation.sh`: a API REST do cluster recém-criado recusava conexões por mais de 30 s ("connection reset by peer") e o `retry` desistia. O retry das ACLs passou de 6 para 36 tentativas.
+2. `03-schemas.sh`: a criação das tags PII/PCI falhava logo após criar o role binding `DataSteward` (propagação). Passou a usar `retry`.
+3. `04-connector.sh`: lia o status no JSON errado (`.status`, quando o CLI devolve `.connector.status` e `.tasks[].state`) e ficava esperando sem enxergar o estado. Corrigido. Também recria o conector (até 3 vezes) se ele falhar na criação, o que ocorreu uma vez com "failed to connect with Schema Registry" logo após criar as API keys.
+4. `05-flink.sh`: os DDLs engoliam qualquer erro (`>/dev/null 2>&1 || true`) e o script anunciava "operacional" com os 3 statements em `FAILED`. Agora cada DDL e cada statement têm o status verificado e o script aborta se não ficarem `COMPLETED`/`RUNNING`.
+5. `05-flink.sh`: o `CREATE TABLE` de `desafio.accounts.versioned` terminava `COMPLETED` e deixava só o tópico e os subjects, **sem a tabela no catálogo do Flink** (observado em 2 ciclos). A causa não foi identificada. O script agora confere com `SHOW CREATE TABLE`, apaga os restos e recria. Funcionou na terceira subida.
+
+Também `evidence-cdc.sh` não capturava o tombstone (`tombstone: null` na evidência anterior, apesar de o README dizer que ele existia). Passou a ler a chave (`--print-key`) e a registrar o tombstone.
+
+
 ## Custo total e teardown
+
+> **Estado desta seção:** os números e a saída de teardown abaixo são do **primeiro ciclo** (2026-11-23, antes das correções acima). Depois disso o pipeline foi recriado do zero com `./setup.sh` para validar as correções. O custo final e a verificação de listas vazias do ciclo definitivo devem ser refeitos depois do último `./teardown.sh`, com `./scripts/cost.sh` consultado depois dele.
 
 **Custo declarado:** consumo bruto de **US$ 189.33** no período 2026-11-16 a 2026-11-24, **totalmente coberto** pelo crédito promocional `FREETRIAL400` (US$ -189.33), ou seja, **US$ 0.00 cobrados no cartão**. Detalhamento por item no pilar ③ acima. O valor só cresceria com o ambiente ligado; este é o valor da consulta feita **depois** do `./teardown.sh` (2026-11-23, `./scripts/cost.sh 2026-11-01 2026-11-24`), somando as linhas do `confluent billing cost list -o json`: Flink 93.53 + conector 72.50 + cluster 23.22 + rede 0.085 = 189.33, contra créditos de -189.33 (líquido US$ 0.00). Como o billing tem defasagem, a última linha diária (2026-11-23) pode ainda receber ajustes; o ambiente já não existe, então nada novo é gerado.
 
@@ -595,6 +655,6 @@ Conferência posterior com `./scripts/status.sh` (somente leitura):
 == Estado local
    .state ausente (setup ainda não rodou, ou o teardown já apagou)
 == Neon (Postgres de origem)
-   transactions: 2003
+   transactions: 2000
    nenhum slot de replicação 'desafio%'
 ```

@@ -45,14 +45,20 @@ fi
 # (as tabelas de saída desafio.transactions.enriched / desafio.fraud.detected são criadas pelo Flink a partir
 #  dos schemas Avro registrados; enriched precisa de watermark em txn_ts para o MATCH_RECOGNIZE.)
 run_ddl() {
-  local name="$1" sql_content="$2"
-  confluent flink statement delete "$name" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" --force >/dev/null 2>&1 || true
-  confluent flink statement create "$name" \
-    --sql "$sql_content" \
-    --compute-pool "$POOL_ID" --database "$CLUSTER_ID" \
-    --environment "$ENV_ID" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" \
-    --wait >/dev/null 2>&1 || true
-  confluent flink statement delete "$name" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" --force >/dev/null 2>&1 || true
+  local name="$1" sql_content="$2" try st
+  for try in 1 2 3 4 5 6; do
+    confluent flink statement delete "$name" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" --force >/dev/null 2>&1 || true
+    confluent flink statement create "$name" \
+      --sql "$sql_content" \
+      --compute-pool "$POOL_ID" --database "$CLUSTER_ID" \
+      --environment "$ENV_ID" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" \
+      --wait >/dev/null 2>&1 || true
+    st="$(confluent flink statement describe "$name" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" -o json 2>/dev/null | jq -r '.status // empty')"
+    confluent flink statement delete "$name" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" --force >/dev/null 2>&1 || true
+    if [ "$st" = "COMPLETED" ] || [ "$st" = "RUNNING" ]; then log "DDL $name: $st"; return 0; fi
+    log "DDL $name: status=${st:-desconhecido} (tentativa $try/6), tentando de novo em 15s"; sleep 15
+  done
+  die "DDL $name falhou após 6 tentativas"
 }
 
 # Tabela de contas com PK e tempo de evento (necessária ao temporal join por FOR SYSTEM_TIME AS OF).
@@ -65,6 +71,36 @@ run_ddl desafio-ddl-accounts "CREATE TABLE IF NOT EXISTS \`desafio.accounts.vers
     PRIMARY KEY (account_id) NOT ENFORCED,
     WATERMARK FOR updated_at AS updated_at - INTERVAL '5' SECOND
   );"
+
+# O DDL acima pode terminar COMPLETED e deixar só o tópico e os subjects, sem a tabela no catálogo do Flink
+# (observado em 2 ciclos de setup). Confirma com SHOW CREATE TABLE; se não existir, apaga os restos e recria.
+table_visible() {
+  local n=desafio-chk-tbl st
+  confluent flink statement delete "$n" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" --force >/dev/null 2>&1 || true
+  confluent flink statement create "$n" --sql "SHOW CREATE TABLE \`$1\`;" --compute-pool "$POOL_ID" --database "$CLUSTER_ID" \
+    --environment "$ENV_ID" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --wait >/dev/null 2>&1 || true
+  st="$(confluent flink statement describe "$n" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" -o json 2>/dev/null | jq -r '.status // empty')"
+  confluent flink statement delete "$n" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" --force >/dev/null 2>&1 || true
+  [ "$st" = "COMPLETED" ]
+}
+if ! table_visible desafio.accounts.versioned; then
+  log "tabela desafio.accounts.versioned fora do catálogo; limpando tópico/subjects órfãos e recriando"
+  confluent kafka topic delete desafio.accounts.versioned --cluster "$CLUSTER_ID" --environment "$ENV_ID" --force >/dev/null 2>&1 || true
+  for sfx in key value; do
+    for perm in "" "?permanent=true"; do
+      curl -s -o /dev/null -X DELETE -u "$PRODUCER_SR_KEY:$PRODUCER_SR_SECRET" "$SR_URL/subjects/desafio.accounts.versioned-$sfx$perm" || true
+    done
+  done
+  sleep 15
+  run_ddl desafio-ddl-accounts "CREATE TABLE \`desafio.accounts.versioned\` (
+      account_id INT, customer_id INT, account_type STRING, risk_tier STRING, updated_at TIMESTAMP_LTZ(3),
+      PRIMARY KEY (account_id) NOT ENFORCED,
+      WATERMARK FOR updated_at AS updated_at - INTERVAL '5' SECOND
+    );"
+  ok=0; for _ in $(seq 1 12); do table_visible desafio.accounts.versioned && { ok=1; break; }; sleep 10; done
+  [ "$ok" = 1 ] || die "tabela desafio.accounts.versioned continua fora do catálogo do Flink"
+fi
+log "tabela desafio.accounts.versioned visível no catálogo"
 
 # A tabela do CDC chega como changelog (retract) e com txn_ts em STRING. Para o temporal join e o
 # MATCH_RECOGNIZE: (1) só INSERTs (changelog.mode=append), (2) tempo de evento = txn_ts do Postgres.
@@ -107,7 +143,13 @@ deploy_stmt() {
     --cloud "$CLUSTER_CLOUD" \
     --region "$CLUSTER_REGION" \
     --property sql.tables.scan.idle-timeout=5s \
-    --wait
+    --wait >/dev/null 2>&1 || true
+  local st
+  st="$(confluent flink statement describe "$name" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" -o json 2>/dev/null | jq -r '.status // empty')"
+  if [ "$st" != "RUNNING" ] && [ "$st" != "COMPLETED" ]; then
+    die "statement $name ficou $st: $(confluent flink statement describe "$name" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" -o json 2>/dev/null | jq -r '.status_detail // empty')"
+  fi
+  log "statement $name: $st"
 }
 
 deploy_stmt "desafio-accounts-populate" "INSERT INTO \`desafio.accounts.versioned\` (account_id, customer_id, account_type, risk_tier, updated_at) SELECT account_id, customer_id, account_type, risk_tier, TO_TIMESTAMP_LTZ(REPLACE(SUBSTRING(updated_at, 1, 19), 'T', ' '), 'yyyy-MM-dd HH:mm:ss', 'UTC') FROM \`desafio.public.accounts\`;"

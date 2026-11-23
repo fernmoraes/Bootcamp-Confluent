@@ -35,11 +35,12 @@ confluent kafka topic consume "${TOPIC_PREFIX}.public.customers" \
   --schema-registry-endpoint "$SR_URL" \
   --schema-registry-api-key "$CONSUMER_SR_KEY" \
   --schema-registry-api-secret "$CONSUMER_SR_SECRET" \
-  --group "${CONSUMER_GROUP_PREFIX}cdc-evidence-reader" \
+  --group "${CONSUMER_GROUP_PREFIX}cdc-evidence-$(date +%s)" \
+  --key-format avro --print-key --delimiter " ## " \
   --partition 0 \
   --offset 200 > "$TMP_RAW" 2>&1 &
 PID=$!
-sleep 12
+sleep 35
 kill $PID 2>/dev/null || true
 
 log "formatando envelopes capturados em $OUT"
@@ -56,6 +57,15 @@ with open(raw_file, 'r') as f:
     for line in f:
         line = line.strip()
         if not line.startswith('{'):
+            continue
+        # com --print-key a linha e: chave ## valor; valor vazio ou chaves vazias = value nulo (tombstone)
+        key_txt, _, line = line.partition(' ## ')
+        if line.strip() in ('', '\x7b\x7d', 'null'):
+            try:
+                if json.loads(key_txt).get('customer_id') == test_id and not events['tombstone']:
+                    events['tombstone'] = {'key': json.loads(key_txt), 'value': None}
+            except Exception:
+                pass
             continue
         try:
             data = json.loads(line)

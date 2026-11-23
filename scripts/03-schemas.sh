@@ -31,7 +31,7 @@ create_tag() {
     log "tag $name já existe no catálogo"
   else
     log "criando tag $name no catálogo"
-    curl -s -f -X POST -u "$PRODUCER_SR_KEY:$PRODUCER_SR_SECRET" \
+    retry 12 curl -s -f -X POST -u "$PRODUCER_SR_KEY:$PRODUCER_SR_SECRET" \
       -H "Content-Type: application/json" \
       -d "[{\"name\":\"$name\",\"description\":\"$desc\"}]" \
       "$SR_URL/catalog/v1/types/tagdefs" >/dev/null

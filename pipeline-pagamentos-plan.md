@@ -21,14 +21,15 @@
 > | 2 Fundação Confluent | feito |
 > | 3 Contrato de dados (Schema Registry) | feito |
 > | 4 Ingestão CDC | feito |
-> | 5 Flink SQL | feito (refeito em 2026-11-23, pipeline real, 7/7 alertas) |
+> | 5 Flink SQL | feito (refeito em 2026-11-23, pipeline real, 6/6 alertas do seed) |
 > | 6 Consumo | feito |
 > | 7 Operação (métricas, acesso, custo, confiabilidade) | feito |
 > | 8 setup/teardown (automação completa) | feito |
 > | 9 README final com evidências reais | feito |
-| 10 Encerramento (teardown + custo final) | feito em 2026-11-23: teardown executado, nada na Confluent; custo final US$ 189.33 bruto / US$ 0.00 líquido |
+| 10 Encerramento (teardown + custo final) | PENDENTE: o 1º teardown foi feito, mas o pipeline foi recriado para validação (sub-tarefa 11); refazer teardown e custo |
+| 11 Revalidação do setup do zero | feito em 2026-11-23: 5 falhas corrigidas, ver nota abaixo |
 >
-> **Estado atual (2026-11-23): TUDO DERRUBADO na Confluent Cloud (`./scripts/status.sh` → "environment desafio-final : NÃO EXISTE"). Neon mantido (2003 transações, sem slot). Para retomar: `./setup.sh`.**
+> **Estado atual (2026-11-23, tarde): AMBIENTE LIGADO (gera custo, ~US$ 1,3/h).** Recriado do zero com `./setup.sh` para validar correções; conector `RUNNING`, 3 statements Flink `RUNNING`, slot ativo. Falta: gravar o vídeo, `./teardown.sh --dry-run` + `./teardown.sh`, reconsultar `./scripts/cost.sh` e refazer a seção "Custo total e teardown" do README com a saída do ciclo final.
 >
 > **Ambiente real em uso (IDs; segredos NÃO ficam aqui):** Neon projeto `late-lake-61849025` (us-east-1, org `org-round-wildflower-93544253`); Confluent org `ibm`, crédito `FREETRIAL400`. Os IDs da Confluent (`env-…`, `lkc-…`, `lsrc-…`, `sa-…`) mudam a cada teardown + setup: use `.state` ou `./scripts/status.sh`, não os valores escritos nas notas abaixo (são do primeiro ciclo).
 
@@ -255,3 +256,11 @@ evidencias/ # saídas capturadas (envelopes CDC, alertas, listas vazias)
   - **Executado:** `./teardown.sh --dry-run` e `./teardown.sh` (exit 0): conector, 8 statements, pool, role bindings, 4 API keys, cluster, 2 SAs e environment apagados; `None found.` nas listas; slots Neon restantes: 0. Saída real colada no README ("Verificação de Listas Vazias pós-Teardown").
   - **Custo final:** US$ 189.33 bruto, US$ 0.00 líquido (README e nota da sub-tarefa 7 atualizados). A última linha diária pode sofrer ajuste por defasagem do billing.
   - **Pendência:** o `.state` foi removido pelo teardown; o README "Como subir" continua válido.
+
+### 11. Revalidação do `setup.sh` do zero (2026-11-23, tarde)
+- **Status:** `[x] done`
+- **Motivo:** o conector estava `FAILED` na primeira sessão; o usuário não queria subir nem gravar nada quebrado.
+- **Falhas achadas e corrigidas** (detalhe e saídas no README, seção "Problemas encontrados e corrigidos"): retry de ACL curto demais (`01-foundation.sh`); tag PII/PCI antes da propagação do `DataSteward` (`03-schemas.sh`); status do conector lido no JSON errado e sem recriação em falha de criação (`04-connector.sh`); DDLs Flink que engoliam erros e script que declarava sucesso com statements `FAILED`; tabela `desafio.accounts.versioned` criada mas ausente do catálogo Flink, com limpeza e recriação automáticas (`05-flink.sh`); tombstone não capturado (`evidence-cdc.sh`).
+- **Recuperação do conector:** `snapshot.mode=when_needed` em `connectors/cdc.json`. Testado derrubando o slot com o conector ligado: `FAILED` por ~2,5 min e depois `RUNNING` sozinho (3 min). Causa do sumiço original do slot: NÃO identificada.
+- **Verificado com saída real:** `setup.sh` exit=0; conector `RUNNING`; 3 statements `RUNNING`; 6 alertas (cartões 100, 114, 228, 245, 260, 320) e nenhum para 126 e 86; consumo pelo `desafio-consumer` e escrita negada (`Topic authorization failed`); envelopes `c`, `u`, `d` e tombstone. Contagem do seed: 2000 transações (as 3 linhas extras do ciclo anterior sumiram com o `db/apply.sh`).
+- **Atenção:** o 2º ciclo de teardown+setup (para provar reprodutibilidade) foi feito com os scripts já corrigidos, mas o último `setup.sh` completo (exit=0) rodou sobre um ambiente em que `05-flink.sh` já tinha sido executado à mão, portanto não é uma subida 100% limpa de ponta a ponta numa única execução.

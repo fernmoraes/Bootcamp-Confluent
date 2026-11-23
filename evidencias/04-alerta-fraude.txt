@@ -1,5 +1,5 @@
 == Camada 4 — Processamento Flink SQL (Evidências reais)
-Data: 2026-11-23 13:58:59 UTC
+Data: 2026-11-23 17:11:20 UTC
 
 === 1. Statements Flink SQL em execução (compute pool: desafio-pool)
   - desafio-accounts-populate [Status: RUNNING]
@@ -8,7 +8,7 @@ Data: 2026-11-23 13:58:59 UTC
 
 === 2. Alertas emitidos em desafio.fraud.detected (lidos com a identidade desafio-consumer)
 Regra: RULE_VELOCITY via MATCH_RECOGNIZE (PATTERN (T{3,}?) WITHIN INTERVAL '60' SECOND, PARTITION BY card_id)
-Total de alertas: 7
+Total de alertas: 6
 
 {"card_id":100,"customer_id":100,"first_transaction_id":1726,"last_transaction_id":1728,"txn_count":3,"total_amount":"4651/10","window_start":"2026-10-26T10:14:04Z","window_end":"2026-10-26T10:14:26Z","rule_name":"RULE_VELOCITY_60S"}
 {"card_id":114,"customer_id":114,"first_transaction_id":1216,"last_transaction_id":1218,"txn_count":3,"total_amount":"14187/25","window_start":"2026-10-19T06:48:07Z","window_end":"2026-10-19T06:48:17Z","rule_name":"RULE_VELOCITY_60S"}
@@ -16,7 +16,6 @@ Total de alertas: 7
 {"card_id":320,"customer_id":9,"first_transaction_id":839,"last_transaction_id":841,"txn_count":3,"total_amount":"36763/100","window_start":"2026-10-14T01:14:27Z","window_end":"2026-10-14T01:14:46Z","rule_name":"RULE_VELOCITY_60S"}
 {"card_id":260,"customer_id":111,"first_transaction_id":1747,"last_transaction_id":1749,"txn_count":3,"total_amount":"4153/20","window_start":"2026-10-26T19:30:49Z","window_end":"2026-10-26T19:31:07Z","rule_name":"RULE_VELOCITY_60S"}
 {"card_id":228,"customer_id":63,"first_transaction_id":882,"last_transaction_id":884,"txn_count":3,"total_amount":"1618/25","window_start":"2026-10-14T14:34:23Z","window_end":"2026-10-14T14:34:59Z","rule_name":"RULE_VELOCITY_60S"}
-{"card_id":50,"customer_id":50,"first_transaction_id":2001,"last_transaction_id":2003,"txn_count":3,"total_amount":"1701/2","window_start":"2026-11-17T14:46:05Z","window_end":"2026-11-17T14:46:25Z","rule_name":"RULE_VELOCITY_60S"}
 
 === 3. Transações de origem de cada alerta (consulta REAL ao Postgres, mesmo card_id, janela < 60 s)
 --- card_id=100 (transações 1726 a 1728)
@@ -65,14 +64,6 @@ Total de alertas: 7
             882 |     228 |  31.28 | APPROVED | 2026-10-14 14:34:23+00
             883 |     228 |  21.30 | APPROVED | 2026-10-14 14:34:35+00
             884 |     228 |  12.14 | APPROVED | 2026-10-14 14:34:59+00
-(3 rows)
-
---- card_id=50 (transações 2001 a 2003)
- transaction_id | card_id | amount |  status  |            txn_ts             
-----------------+---------+--------+----------+-------------------------------
-           2001 |      50 | 150.00 | APPROVED | 2026-11-17 14:46:05.345974+00
-           2002 |      50 | 280.50 | APPROVED | 2026-11-17 14:46:15.345974+00
-           2003 |      50 | 420.00 | APPROVED | 2026-11-17 14:46:25.345974+00
 (3 rows)
 
 === 4. Cartões que NÃO devem gerar alerta (seed): 126 (2 transações em 30 s) e 86 (3 transações espaçadas, 90 s)

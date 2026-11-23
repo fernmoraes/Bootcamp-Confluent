@@ -1,29 +1,29 @@
 == Camada 5 — Consumo e Controle de Acesso (Evidências Reais)
-Data: 2026-11-23 13:59:44 UTC
+Data: 2026-11-23 17:08:44 UTC
 Identidade do Consumidor: desafio-consumer
-Grupo de Consumo Utilizado: desafio-evidence-1795442370
+Grupo de Consumo Utilizado: desafio-evidence-1795453709
 Tópico Alvo: desafio.fraud.detected
 
 === 1. Leitura Autorizada de Alertas de Fraude
 Comando:
   confluent kafka topic consume desafio.fraud.detected \
-    --group desafio-evidence-1795442370 \
+    --group desafio-evidence-1795453709 \
     --value-format avro --schema-registry-endpoint <SR_URL> \
     --from-beginning
 
 Amostra de Alerta Consumido:
 {
-  "account_id": 50,
-  "alert_ts": "2026-11-23T13:52:09.989Z",
-  "card_id": 50,
-  "customer_id": 50,
-  "first_transaction_id": 2001,
-  "last_transaction_id": 2003,
+  "account_id": 214,
+  "alert_ts": "2026-11-23T17:06:00.334Z",
+  "card_id": 320,
+  "customer_id": 9,
+  "first_transaction_id": 839,
+  "last_transaction_id": 841,
   "rule_name": "RULE_VELOCITY_60S",
-  "total_amount": "1701/2",
+  "total_amount": "36763/100",
   "txn_count": 3,
-  "window_end": "2026-11-17T14:46:25Z",
-  "window_start": "2026-11-17T14:46:05Z"
+  "window_end": "2026-10-14T01:14:46Z",
+  "window_start": "2026-10-14T01:14:27Z"
 }
 
 === 2. Teste Negativo de Escrita (Menor Privilégio / ACLs)

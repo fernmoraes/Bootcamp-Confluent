@@ -1,21 +1,22 @@
 == Camada 5 — Operação e Governança: Os Quatro Pilares (Evidências Reais)
-Data da Coleta: 2026-11-23 14:02:01 UTC
-Cluster ID: lkc-yow5gwo
-Environment ID: env-6nj08j
+Data da Coleta: 2026-11-23 17:09:03 UTC
+Cluster ID: lkc-9ky0x9m
+Environment ID: env-p3nr7m
 
 === PILAR 1: Observabilidade (Métricas e Lag) ===
-=== 1. Métricas de Volume no Cluster (lkc-yow5gwo) — Granularidade 1h ===
+>> Criando Cloud API Key temporária para consulta à Metrics API...
+=== 1. Métricas de Volume no Cluster (lkc-9ky0x9m) — Granularidade 1h ===
 
 --- io.confluent.kafka.server/received_bytes (Bytes Recebidos / Ingestão) ---
 {
   "data": [
     {
-      "timestamp": "2026-11-23T13:00:00Z",
-      "value": 23785.0
+      "timestamp": "2026-11-23T16:00:00Z",
+      "value": 542982.0
     },
     {
-      "timestamp": "2026-11-23T14:00:00Z",
-      "value": 0.0
+      "timestamp": "2026-11-23T17:00:00Z",
+      "value": 77802.0
     }
   ]
 }
@@ -24,12 +25,8 @@ Environment ID: env-6nj08j
 {
   "data": [
     {
-      "timestamp": "2026-11-23T13:00:00Z",
-      "value": 7019047.0
-    },
-    {
-      "timestamp": "2026-11-23T14:00:00Z",
-      "value": 0.0
+      "timestamp": "2026-11-23T17:00:00Z",
+      "value": 808620.0
     }
   ]
 }
@@ -38,86 +35,48 @@ Environment ID: env-6nj08j
 {
   "data": [
     {
-      "timestamp": "2026-11-23T03:00:00Z",
-      "value": 1510673.0
+      "timestamp": "2026-11-23T16:00:00Z",
+      "value": 542982.0
     },
     {
-      "timestamp": "2026-11-23T04:00:00Z",
-      "value": 1510673.0
-    },
-    {
-      "timestamp": "2026-11-23T05:00:00Z",
-      "value": 1510673.0
-    },
-    {
-      "timestamp": "2026-11-23T06:00:00Z",
-      "value": 1510673.0
-    },
-    {
-      "timestamp": "2026-11-23T07:00:00Z",
-      "value": 1510673.0
-    },
-    {
-      "timestamp": "2026-11-23T08:00:00Z",
-      "value": 1510673.0
-    },
-    {
-      "timestamp": "2026-11-23T09:00:00Z",
-      "value": 1510673.0
-    },
-    {
-      "timestamp": "2026-11-23T10:00:00Z",
-      "value": 1510673.0
-    },
-    {
-      "timestamp": "2026-11-23T11:00:00Z",
-      "value": 1510673.0
-    },
-    {
-      "timestamp": "2026-11-23T12:00:00Z",
-      "value": 1510673.0
-    },
-    {
-      "timestamp": "2026-11-23T13:00:00Z",
-      "value": 1512238.0
-    },
-    {
-      "timestamp": "2026-11-23T14:00:00Z",
-      "value": 1386533.0
+      "timestamp": "2026-11-23T17:00:00Z",
+      "value": 620692.0
     }
   ]
 }
 
 === 2. Grupos de Consumo e Lag ===
-None found.
+    Cluster   |       Consumer Group        | Coordinator | Simple | Partition Assignor | State   
+--------------+-----------------------------+-------------+--------+--------------------+---------
+  lkc-9ky0x9m | desafio-evidence-1795453709 | 50052       | false  | cooperative-sticky | STABLE  
 
 === PILAR 2: Segurança e Controle de Acesso (Matriz de Menor Privilégio) ===
 Service Accounts e ACLs Kafka configuradas:
      Principal    | Permission |    Operation     | Resource Type |    Resource Name     | Pattern Type  
 ------------------+------------+------------------+---------------+----------------------+---------------
-  User:sa-7p15z9p | ALLOW      | CREATE           | TOPIC         | __debezium-heartbeat | PREFIXED      
-  User:sa-7p15z9p | ALLOW      | CREATE           | TOPIC         | desafio              | PREFIXED      
-  User:sa-7p15z9p | ALLOW      | DESCRIBE         | CLUSTER       | kafka-cluster        | LITERAL       
-  User:sa-7p15z9p | ALLOW      | DESCRIBE         | TOPIC         | __debezium-heartbeat | PREFIXED      
-  User:sa-7p15z9p | ALLOW      | DESCRIBE         | TOPIC         | desafio              | PREFIXED      
-  User:sa-7p15z9p | ALLOW      | DESCRIBE_CONFIGS | CLUSTER       | kafka-cluster        | LITERAL       
-  User:sa-7p15z9p | ALLOW      | WRITE            | TOPIC         | __debezium-heartbeat | PREFIXED      
-  User:sa-7p15z9p | ALLOW      | WRITE            | TOPIC         | desafio              | PREFIXED      
-  User:sa-o27kynx | ALLOW      | DESCRIBE         | TOPIC         | desafio              | PREFIXED      
-  User:sa-o27kynx | ALLOW      | READ             | GROUP         | desafio-             | PREFIXED      
-  User:sa-o27kynx | ALLOW      | READ             | TOPIC         | desafio              | PREFIXED      
+  User:sa-0jm6vv2 | ALLOW      | CREATE           | TOPIC         | __debezium-heartbeat | PREFIXED      
+  User:sa-0jm6vv2 | ALLOW      | CREATE           | TOPIC         | desafio              | PREFIXED      
+  User:sa-0jm6vv2 | ALLOW      | DESCRIBE         | CLUSTER       | kafka-cluster        | LITERAL       
+  User:sa-0jm6vv2 | ALLOW      | DESCRIBE         | TOPIC         | __debezium-heartbeat | PREFIXED      
+  User:sa-0jm6vv2 | ALLOW      | DESCRIBE         | TOPIC         | desafio              | PREFIXED      
+  User:sa-0jm6vv2 | ALLOW      | DESCRIBE_CONFIGS | CLUSTER       | kafka-cluster        | LITERAL       
+  User:sa-0jm6vv2 | ALLOW      | WRITE            | TOPIC         | __debezium-heartbeat | PREFIXED      
+  User:sa-0jm6vv2 | ALLOW      | WRITE            | TOPIC         | desafio              | PREFIXED      
+  User:sa-mkxgqqq | ALLOW      | DESCRIBE         | TOPIC         | desafio              | PREFIXED      
+  User:sa-mkxgqqq | ALLOW      | READ             | GROUP         | desafio-             | PREFIXED      
+  User:sa-mkxgqqq | ALLOW      | READ             | TOPIC         | desafio              | PREFIXED      
 
 RBAC no Schema Registry / Stream Governance (Producer: desafio-producer):
      ID     |    Principal    | Email |      Role      | Environment | Cloud Cluster |  Cluster Type   | Logical Cluster | Resource Type |  Name   | Pattern Type  
 ------------+-----------------+-------+----------------+-------------+---------------+-----------------+-----------------+---------------+---------+---------------
-  rb-3mW1WK | User:sa-7p15z9p |       | DataSteward    | env-6nj08j  |               |                 |                 |               |         |               
-  rb-A8QwbN | User:sa-7p15z9p |       | DeveloperWrite | env-6nj08j  |               | Schema Registry | lsrc-w7w0zw5    | Subject       | desafio | PREFIXED      
-  rb-G3bEPo | User:sa-7p15z9p |       | DeveloperRead  | env-6nj08j  |               | Schema Registry | lsrc-w7w0zw5    | Subject       | desafio | PREFIXED      
+  rb-7m94DY | User:sa-0jm6vv2 |       | DeveloperWrite | env-p3nr7m  |               | Schema Registry | lsrc-j57ko6p    | Subject       | desafio | PREFIXED      
+  rb-X75d3m | User:sa-0jm6vv2 |       | DataSteward    | env-p3nr7m  |               |                 |                 |               |         |               
+  rb-jzBEMr | User:sa-0jm6vv2 |       | DeveloperRead  | env-p3nr7m  |               | Schema Registry | lsrc-j57ko6p    | Subject       | desafio | PREFIXED      
 
 RBAC no Schema Registry (Consumer: desafio-consumer):
      ID     |    Principal    | Email |     Role      | Environment | Cloud Cluster |  Cluster Type   | Logical Cluster | Resource Type |  Name   | Pattern Type  
 ------------+-----------------+-------+---------------+-------------+---------------+-----------------+-----------------+---------------+---------+---------------
-  rb-B3qDrP | User:sa-o27kynx |       | DeveloperRead | env-6nj08j  |               | Schema Registry | lsrc-w7w0zw5    | Subject       | desafio | PREFIXED      
+  rb-yDPlRL | User:sa-mkxgqqq |       | DeveloperRead | env-p3nr7m  |               | Schema Registry | lsrc-j57ko6p    | Subject       | desafio | PREFIXED      
 
 === PILAR 3: Custos Reais e Faturamento Confluent Cloud ===
   Start Date |  End Date  | Granularity |      Line Type      | Product |   Resource   | Resource Name | Environment | Network Access Type |        Price        | Original Amount | Discount Amount |  Amount    

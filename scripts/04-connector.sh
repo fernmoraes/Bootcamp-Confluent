@@ -15,7 +15,9 @@ log "verificando conector $CONN_NAME no cluster $CLUSTER_ID"
 CONN_ID="$(confluent connect cluster list --cluster "$CLUSTER_ID" --environment "$ENV_ID" -o json 2>/dev/null \
   | jq -r --arg n "$CONN_NAME" '.[]? | select(.name==$n or .id==$n) | .id' | head -1 || true)"
 
+CONN_CREATED=0
 if [ -z "$CONN_ID" ]; then
+  CONN_CREATED=1
   log "criando conector $CONN_NAME a partir de connectors/cdc.json"
   TMP_CFG="$(mktemp -t cdc-config.XXXXXX.json)"
   chmod 600 "$TMP_CFG"
@@ -57,8 +59,8 @@ state_set CONNECTOR_ID "$CONN_ID"
 log "aguardando conector $CONN_ID ficar RUNNING"
 for i in $(seq 1 40); do
   STATUS_JSON="$(confluent connect cluster describe "$CONN_ID" --cluster "$CLUSTER_ID" --environment "$ENV_ID" -o json 2>/dev/null || echo '{}')"
-  CONN_STATUS="$(jq -r '.status.status // .status // empty' <<<"$STATUS_JSON")"
-  TASKS_STATUS="$(jq -r '[.tasks[]?.status] | join(",")' <<<"$STATUS_JSON")"
+  CONN_STATUS="$(jq -r '.connector.status // empty' <<<"$STATUS_JSON")"
+  TASKS_STATUS="$(jq -r '[.tasks[]?.state] | join(",")' <<<"$STATUS_JSON")"
   
   log "status conector: $CONN_STATUS | tasks: [${TASKS_STATUS:-pendente}] ($i/40)"
   
@@ -68,7 +70,17 @@ for i in $(seq 1 40); do
       break
     fi
   elif [ "$CONN_STATUS" = "FAILED" ] || [[ "$TASKS_STATUS" == *"FAILED"* ]]; then
-    die "conector entrou em estado FAILED: $(jq -r '.tasks[]?.trace // empty' <<<"$STATUS_JSON")"
+    TRACE="$(jq -r '.tasks[]?.msg // .connector.trace // empty' <<<"$STATUS_JSON")"
+    # Falha na CRIAÇÃO costuma ser corrida de propagação (API key/role binding do Schema Registry recém-criados):
+    # apaga e recria até 3 vezes antes de desistir.
+    if [ "${CONN_TRIES:-1}" -lt 3 ] && [ "$CONN_CREATED" = 1 ]; then
+      export CONN_TRIES=$(( ${CONN_TRIES:-1} + 1 ))
+      log "conector FAILED na criação (${TRACE%%.*}); recriando (tentativa $CONN_TRIES/3)"
+      confluent connect cluster delete "$CONN_ID" --cluster "$CLUSTER_ID" --environment "$ENV_ID" --force >/dev/null 2>&1 || true
+      sleep 20
+      exec "$0"
+    fi
+    die "conector entrou em estado FAILED: $TRACE"
   fi
   sleep 15
 done

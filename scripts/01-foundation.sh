@@ -53,7 +53,7 @@ state_set PRODUCER_SA "$PRODUCER_SA"; state_set CONSUMER_SA "$CONSUMER_SA"
 log "service accounts: $PRODUCER_SA_NAME=$PRODUCER_SA  $CONSUMER_SA_NAME=$CONSUMER_SA"
 
 # ---------- ACLs Kafka (prefixo) ----------
-acl() { retry 6 confluent kafka acl create --allow --environment "$ENV_ID" --cluster "$CLUSTER_ID" "$@" >/dev/null; }
+acl() { retry 36 confluent kafka acl create --allow --environment "$ENV_ID" --cluster "$CLUSTER_ID" "$@" >/dev/null; }
 log "ACLs do producer"
 acl --service-account "$PRODUCER_SA" --operations create,write,describe --prefix --topic "$TOPIC_PREFIX"
 acl --service-account "$PRODUCER_SA" --operations create,write,describe --prefix --topic "__debezium-heartbeat"
