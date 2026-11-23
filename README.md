@@ -10,7 +10,7 @@ Reproduzível com `./setup.sh` (pré-requisito: `.env` preenchido a partir do `.
 Crie a conta em <https://confluent.cloud/signup>. A página de instalação da CLI menciona US$ 400 em créditos gratuitos para novos usuários do Confluent Cloud; confira as condições vigentes no momento do cadastro.
 
 ### 2. Conta Neon (Postgres)
-Crie a conta em <https://console.neon.tech>. Você vai precisar do host, banco, usuário e senha para preencher o `.env`. A habilitação de logical replication na Neon será confirmada na documentação oficial na Sub-tarefa 1.
+Crie a conta em <https://console.neon.tech>. Você vai precisar do host, banco, usuário e senha para preencher o `.env`. O CDC exige logical replication no projeto Neon: habilite com `neon projects update <id> --enable-logical-replication --yes` (**irreversível** para aquele projeto; `db/apply.sh` aborta se `wal_level` não for `logical`).
 
 ### 3. Confluent CLI
 Documentação oficial: <https://docs.confluent.io/confluent-cli/current/install.html>
@@ -51,7 +51,7 @@ Conforme a documentação da Neon (<https://neon.com/docs/connect/query-with-psq
 O pacote `libpq` do Homebrew é *keg-only*: não é linkado no PATH automaticamente, por isso o `export PATH` é necessário.
 
 ### 5. Python 3
-Necessário para o gerador determinístico de dados (`seed=42`) e para utilitários dos scripts. Verifique com `python3 --version`. A versão mínima exigida será definida na Sub-tarefa 1, quando o gerador existir.
+Necessário para o gerador determinístico de dados (`seed=42`, `db/seed.py`) e para utilitários dos scripts. O gerador usa só a biblioteca padrão e foi testado com Python 3.14.5 (`python3 --version`). Não foi testado com outras versões.
 
 ### 6. Configurar o `.env`
 
@@ -302,7 +302,7 @@ Captura de ciclo completo `INSERT` $\rightarrow$ `UPDATE` $\rightarrow$ `DELETE`
 
 ## Camada 4 — Processamento (Flink SQL)
 
-Processamento de stream contínuo com Apache Flink gerenciado na Confluent Cloud (Compute Pool `desafio-pool`, região `aws/us-east-1`). Statements em `sql/` com a propriedade de execução `sql.tables.scan.idle-timeout=5s` (evita travamento de janelas temporais por partições ociosas). Script de automação: `scripts/05-flink.sh`. Evidência completa: `evidencias/04-alerta-fraude.txt`.
+Processamento de stream contínuo com Apache Flink gerenciado na Confluent Cloud (Compute Pool `desafio-pool`, região `aws/us-east-1`). Statements em `sql/` com a propriedade de execução `sql.tables.scan.idle-timeout=5s`. Motivo: todas as contas têm `updated_at = 2026-10-01 00:00:00` (conferido no Postgres: mín = máx) e o watermark de `desafio.accounts.versioned` é `updated_at - 5 s`, então fica parado em `2026-09-30 23:59:55` (derivado do DDL e dos dados). Sem o `idle-timeout`, o temporal join não emite nada (com `idle-timeout=0` o `enriched` ficou vazio, segundo o diário de execução; não foi remedido nesta sessão). Script de automação: `scripts/05-flink.sh`. Evidência completa: `evidencias/04-alerta-fraude.txt`.
 
 **O caminho é o real, de ponta a ponta:** Postgres → conector CDC → `desafio.public.transactions` → Flink → `desafio.fraud.detected`. Nenhuma transação foi injetada à mão no Flink: os alertas abaixo nascem das 2000 transações do seed.
 
@@ -389,11 +389,15 @@ JOIN `desafio.accounts.versioned` FOR SYSTEM_TIME AS OF m.window_end AS a
   ON m.account_id = a.account_id;
 ```
 
+**Por que `txn_count` é sempre 3.** O padrão `T{3,}?` é relutante: fecha o match assim que tem 3 linhas, e `AFTER MATCH SKIP PAST LAST ROW` descarta o que sobrar da rajada. Isso é visível nos dados: no Postgres o cartão 320 tem uma rajada de **4** transações (839 a 842, em 26 s) e o cartão 260 uma de **5** (1747 a 1751, em 26 s), mas cada um gerou **um** alerta com `txn_count=3` (839 a 841 e 1747 a 1749). Consequência: o alerta diz "houve 3 ou mais em 60 s", não "quantas houve".
+
 **Decisão de projeto (aprendida na execução).** A primeira versão aplicava o `MATCH_RECOGNIZE` sobre o tópico `desafio.transactions.enriched`, isto é, depois do join. Com isso saíam só 3 dos 6 alertas esperados: os cartões 114, 228 e 320 ficavam sem alerta, embora suas transações estivessem corretas no `enriched`. Ao consultar `CURRENT_WATERMARK`, todas essas transações apareciam como **atrasadas** (o watermark da tabela já estava semanas à frente), então o Flink as descartava. A versão atual detecta o padrão **antes** do join e só depois busca o `customer_id` da conta (`FOR SYSTEM_TIME AS OF m.window_end`). Resultado: 6 de 6 rajadas do seed (cartões 100, 114, 228, 245, 260, 320), sem alerta para 126 e 86.
+
+Por que isso é o desenho correto e não um contorno: o temporal join **não grava o `enriched` em ordem de event time**. Medido lendo o tópico na ordem dos offsets (`evidencias/07-ordem-enriched.txt`, ambiente com a espera nova): 1986 das 2000 linhas têm `txn_ts` abaixo do maior `txn_ts` já visto (maior atraso: 29 dias e 16 h); o `account_id` muda 240 vezes (um bloco por conta, 240 contas); o maior `txn_ts` já chega a 2026-10-29 no offset 10, isto é, o relógio de evento salta para o fim de outubro logo no início e quase todas as linhas seguintes chegam "atrasadas". Um `MATCH_RECOGNIZE ... ORDER BY txn_time` sobre esse tópico depende do watermark, e linhas atrasadas em relação a ele são descartadas (foi o que o `CURRENT_WATERMARK` mostrou no 1º ciclo). Já `desafio.public.transactions`, na ordem de `transaction_id`, não tem nenhuma linha com `txn_ts` abaixo do maior anterior (medido no Postgres: 0 de 2000; a ordem do tópico em si não foi medida). Isso é compatível com a perda dos cartões 114, 228 e 320 no 1º ciclo (incluindo o 114, que a corrida de partida não explicava). Limite desta afirmação: o `MATCH_RECOGNIZE` sobre o `enriched` **não foi reexecutado** nesta sessão, e os dados do 1º ciclo não existem mais; o que foi medido é a ordem de gravação, não a perda dos alertas.
 
 ### Alertas emitidos vs. transações de origem (evidência real)
 
-**Alertas lidos do tópico `desafio.fraud.detected`** (`scripts/evidence-flink.sh`, 6 alertas, um por rajada do seed):
+**Alertas lidos do tópico `desafio.fraud.detected`** (`scripts/evidence-flink.sh`, 6 alertas, um por rajada do seed). O `total_amount` aparece como `"4651/10"` porque a CLI imprime o decimal Avro como fração (numerador/denominador): 4651/10 = **465,10**, que é a soma das 3 transações do cartão 100 (conferida no Postgres: 1726 a 1728, soma 465.10, n=3):
 
 ```json
 {"card_id":100,"customer_id":100,"first_transaction_id":1726,"last_transaction_id":1728,"txn_count":3,"total_amount":"4651/10","window_start":"2026-10-26T10:14:04Z","window_end":"2026-10-26T10:14:26Z","rule_name":"RULE_VELOCITY_60S"}
@@ -420,7 +424,7 @@ Os três eventos do cartão 100 ocorrem em 22 s (10:14:04 a 10:14:26), dentro da
 
 **Controle negativo:** Nenhum alerta para os cartões 126 e 86, como esperado.
 
-**Por que esta peça:** O Apache Flink SQL na Confluent Cloud permite declarar lógica complexa de processamento de eventos (CEP via `MATCH_RECOGNIZE` e Temporal Joins) em SQL padrão declarativo, sem a necessidade de manter e orquestrar microsserviços customizados com estado em memória (como Redis/RocksDB). O Flink gerencia o estado das janelas com semântica *exactly-once* e tolerância a falhas nativa, permitindo detecção de fraude diretamente sobre o fluxo de streaming do Kafka.
+**Por que esta peça:** O Apache Flink SQL na Confluent Cloud permite declarar lógica complexa de processamento de eventos (CEP via `MATCH_RECOGNIZE` e Temporal Joins) em SQL padrão declarativo, sem a necessidade de manter e orquestrar microsserviços customizados com estado em memória (como Redis ou um banco de estado externo). O Flink gerencia o estado das janelas com semântica *exactly-once* e tolerância a falhas nativa, permitindo detecção de fraude diretamente sobre o fluxo de streaming do Kafka.
 
 ## Camada 5 — Consumo e Operação (Os Quatro Pilares)
 
@@ -515,7 +519,7 @@ Consumo real medido com `confluent billing cost list --start-date 2026-11-01 --e
 | Trecho do Pipeline | Garantia de Entrega | Mecanismo de Tolerância a Falhas |
 |---|---|---|
 | **Postgres (WAL) $\rightarrow$ CDC Debezium** | *At-least-once* | Replication slot com LSN confirmado após ACK no Kafka. **Ponto frágil, observado na prática:** se o slot some no Postgres (WAL descartado ou slot recriado), o conector vai para `FAILED` (`USER_ACTIONABLE_ERROR`) e não retoma sozinho. Por isso `connectors/cdc.json` usa `snapshot.mode=when_needed`; ver "Teste de recuperação" abaixo. |
-| **CDC $\rightarrow$ Tópicos Kafka** | *At-least-once* | Produtor com `acks=all`, $RF=3$ e particionamento estrito por chave (`card_id`, `account_id`, `customer_id`). |
+| **CDC $\rightarrow$ Tópicos Kafka** | *At-least-once* | Tópicos com $RF=3$ (medido com `confluent kafka topic describe`). A chave de cada mensagem é a PK da tabela (`transaction_id` em `transactions`, `account_id` em `accounts`, `customer_id`, `card_id` e `merchant_id` nas demais; conferido nos schemas `*-key`). Os tópicos do CDC têm **1 partição**, então a ordem por tópico é total e a chave não distribui carga. |
 | **Kafka $\rightarrow$ Flink SQL $\rightarrow$ Tópicos Alerta** | *Exactly-once* | Checkpoints periódicos de estado e transações Kafka no sink Flink. |
 | **Tópico de Alerta $\rightarrow$ Consumidor Final** | *At-least-once* | **[ELO FRACO]**: A entrega da mensagem é garantida, mas o efeito externo (bloqueio do cartão, envio de notificação) exige controle de **idempotência na aplicação consumidora** chaveado por `(card_id, first_transaction_id, window_start)` para prevenir duplicação em rebalances. |
 
@@ -558,8 +562,8 @@ Com `when_needed` o conector se recuperou sozinho em cerca de 3 minutos (recriou
 
 - **Ainda não provado:** um `./setup.sh` limpo, de ponta a ponta, numa única execução, com a espera `wait_accounts_versioned` ativa. A correção foi testada com o ambiente já no ar (caminho feliz 240/240 e caminho de falha por timeout), mas não no cenário em que a corrida ocorria (populate e enrichment subindo quase juntos).
 - **Causas não identificadas:** o sumiço do slot de replicação na 1ª sessão; a tabela `desafio.accounts.versioned` que terminava o DDL como `COMPLETED` sem aparecer no catálogo do Flink (2 ciclos; o script detecta e recria); a falha única de criação do conector ("failed to connect with Schema Registry").
-- **Alertas do 1º ciclo:** a corrida explica a perda dos cartões 228 e 320 (contas da 2ª leva), mas não a do 114 (conta 114, 1ª leva). Sem dados do 1º ciclo, isso não foi fechado.
-- **`desafio.transactions.enriched`** não é lido por nenhum consumidor; a regra de fraude lê `desafio.public.transactions` direto.
+- **Alertas do 1º ciclo (cartões 114, 228 e 320):** a corrida de partida **não** explica a perda: as transações desses cartões estavam no `enriched` e o 114 é da 1ª leva. O que se mediu (`evidencias/07-ordem-enriched.txt`) é que o temporal join grava o `enriched` fora de ordem de event time: 1986 de 2000 linhas "atrasadas", 240 blocos de `account_id`, maior `txn_ts` já em 2026-10-29 no offset 10. Isso é compatível com a perda, mas **não foi reproduzido** (o `MATCH_RECOGNIZE` sobre o `enriched` não foi reexecutado e os dados do 1º ciclo não existem mais).
+- **`desafio.transactions.enriched`** não é lido por nenhum consumidor; a regra de fraude lê `desafio.public.transactions` direto. Qualquer consumidor do `enriched` por event time (janela, `MATCH_RECOGNIZE`, join temporal) sofre do mesmo problema de gravação fora de ordem.
 
 ### Problemas encontrados e corrigidos no `setup.sh` (execução do zero)
 
