@@ -554,9 +554,16 @@ Na primeira sessão o conector `desafio-cdc` terminou `FAILED` com o slot de rep
 
 Com `when_needed` o conector se recuperou sozinho em cerca de 3 minutos (recriou o slot e refez o snapshot). Depois disso um novo ciclo INSERT/UPDATE/DELETE voltou a chegar ao Kafka (`op=c`, `u`, `d` e tombstone). Sem essa opção, o mesmo cenário deixa o conector em `FAILED` até intervenção manual. Como o snapshot é refeito, o consumidor pode ver registros repetidos: a idempotência continua sendo responsabilidade da aplicação (ver tabela acima).
 
+### Pendências e limites conhecidos desta entrega
+
+- **Ainda não provado:** um `./setup.sh` limpo, de ponta a ponta, numa única execução, com a espera `wait_accounts_versioned` ativa. A correção foi testada com o ambiente já no ar (caminho feliz 240/240 e caminho de falha por timeout), mas não no cenário em que a corrida ocorria (populate e enrichment subindo quase juntos).
+- **Causas não identificadas:** o sumiço do slot de replicação na 1ª sessão; a tabela `desafio.accounts.versioned` que terminava o DDL como `COMPLETED` sem aparecer no catálogo do Flink (2 ciclos; o script detecta e recria); a falha única de criação do conector ("failed to connect with Schema Registry").
+- **Alertas do 1º ciclo:** a corrida explica a perda dos cartões 228 e 320 (contas da 2ª leva), mas não a do 114 (conta 114, 1ª leva). Sem dados do 1º ciclo, isso não foi fechado.
+- **`desafio.transactions.enriched`** não é lido por nenhum consumidor; a regra de fraude lê `desafio.public.transactions` direto.
+
 ### Problemas encontrados e corrigidos no `setup.sh` (execução do zero)
 
-Rodar `./setup.sh` do zero expôs 5 falhas, todas corrigidas e reverificadas até o `setup.sh` terminar com `exit=0` e `./scripts/status.sh` mostrar conector `RUNNING` e 3 statements Flink `RUNNING`:
+Rodar `./setup.sh` do zero expôs 6 falhas, todas corrigidas e reverificadas até o `setup.sh` terminar com `exit=0` e `./scripts/status.sh` mostrar conector `RUNNING` e 3 statements Flink `RUNNING`:
 
 1. `01-foundation.sh`: a API REST do cluster recém-criado recusava conexões por mais de 30 s ("connection reset by peer") e o `retry` desistia. O retry das ACLs passou de 6 para 36 tentativas.
 2. `03-schemas.sh`: a criação das tags PII/PCI falhava logo após criar o role binding `DataSteward` (propagação). Passou a usar `retry`.
@@ -564,7 +571,7 @@ Rodar `./setup.sh` do zero expôs 5 falhas, todas corrigidas e reverificadas at�
 4. `05-flink.sh`: os DDLs engoliam qualquer erro (`>/dev/null 2>&1 || true`) e o script anunciava "operacional" com os 3 statements em `FAILED`. Agora cada DDL e cada statement têm o status verificado e o script aborta se não ficarem `COMPLETED`/`RUNNING`.
 5. `05-flink.sh`: o `CREATE TABLE` de `desafio.accounts.versioned` terminava `COMPLETED` e deixava só o tópico e os subjects, **sem a tabela no catálogo do Flink** (observado em 2 ciclos). A causa não foi identificada. O script agora confere com `SHOW CREATE TABLE`, apaga os restos e recria. Funcionou na terceira subida.
 
-Também `evidence-cdc.sh` não capturava o tombstone (`tombstone: null` na evidência anterior, apesar de o README dizer que ele existia). Passou a ler a chave (`--print-key`) e a registrar o tombstone.
+6. `evidence-cdc.sh` não capturava o tombstone (`tombstone: null` na evidência anterior, apesar de o README dizer que ele existia). Passou a ler a chave (`--print-key`) e a registrar o tombstone.
 
 
 ## Custo total e teardown

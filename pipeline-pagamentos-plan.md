@@ -26,12 +26,39 @@
 > | 7 Operação (métricas, acesso, custo, confiabilidade) | feito |
 > | 8 setup/teardown (automação completa) | feito |
 > | 9 README final com evidências reais | feito |
-| 10 Encerramento (teardown + custo final) | PENDENTE: o 1º teardown foi feito, mas o pipeline foi recriado para validação (sub-tarefa 11); refazer teardown e custo |
-| 11 Revalidação do setup do zero | feito em 2026-11-23: 5 falhas corrigidas, ver nota abaixo |
+> | 10 Encerramento (teardown definitivo + custo final) | **PENDENTE** (o 1º teardown foi feito em 2026-11-23, mas o ambiente foi recriado para validação; refazer teardown e custo ao final) |
+> | 11 Revalidação do setup do zero | feito (6 falhas do setup corrigidas + corrida do `enriched` corrigida); **falta provar um setup limpo de ponta a ponta com a espera nova** |
 >
-> **Estado atual (2026-11-23, tarde): AMBIENTE LIGADO (gera custo, ~US$ 1,3/h).** Recriado do zero com `./setup.sh` para validar correções; conector `RUNNING`, 3 statements Flink `RUNNING`, slot ativo. Falta: gravar o vídeo, `./teardown.sh --dry-run` + `./teardown.sh`, reconsultar `./scripts/cost.sh` e refazer a seção "Custo total e teardown" do README com a saída do ciclo final.
+> **Estado atual (2026-11-23, ~18:40 UTC): AMBIENTE LIGADO, GERANDO CUSTO (~US$ 1,3/h).** Verificado com `./scripts/status.sh`: env `desafio-final` (`env-p3nr7m`), cluster `lkc-9ky0x9m` UP, conector `desafio-cdc` RUNNING, 3 statements Flink RUNNING (`desafio-accounts-populate`, `desafio-enrichment`, `desafio-fraud-detection`), slot `desafio_cdc_slot` ativo, Neon com 2000 transações. Medido: `desafio.public.transactions` 2000; `desafio.transactions.enriched` 2000 linhas / 2000 distintas / 240 contas; `desafio.fraud.detected` 6 alertas. **Último commit: `5b14350` em `origin/main`.** Ver a seção "PRÓXIMOS PASSOS" logo abaixo.
 >
 > **Ambiente real em uso (IDs; segredos NÃO ficam aqui):** Neon projeto `late-lake-61849025` (us-east-1, org `org-round-wildflower-93544253`); Confluent org `ibm`, crédito `FREETRIAL400`. Os IDs da Confluent (`env-…`, `lkc-…`, `lsrc-…`, `sa-…`) mudam a cada teardown + setup: use `.state` ou `./scripts/status.sh`, não os valores escritos nas notas abaixo (são do primeiro ciclo).
+
+## PRÓXIMOS PASSOS (leia antes de agir; retomada em chat novo)
+
+**Ordem sugerida. Pergunte ao usuário antes de gastar (cada hora do ambiente ligado custa ~US$ 1,3).**
+
+1. **Provar o setup limpo de ponta a ponta (ainda NÃO feito).** `./teardown.sh --dry-run`, `./teardown.sh`, `./setup.sh` numa única execução, sem intervenção manual. É a única prova de que a espera `wait_accounts_versioned` (em `scripts/05-flink.sh`) evita a corrida no cenário em que ela ocorria (populate e enrichment subindo quase juntos). Depois medir: `enriched` = 2000 / 2000 / 240, `fraud.detected` = 6 alertas, conector RUNNING, 3 statements RUNNING.
+2. **Gravar o vídeo** (decisão do usuário; o PDF só cita o "vídeo-gabarito" como referência, não é item obrigatório do entregável). Só com o ambiente saudável.
+3. **Teardown definitivo** (`./teardown.sh --dry-run` e depois `./teardown.sh`), colar a saída REAL no README, reconsultar `./scripts/cost.sh 2026-11-01 <hoje>` e atualizar o custo final no README (seção "Custo total e teardown") e na nota 7 deste plano. Hoje essa seção do README ainda descreve o 1º ciclo e traz um aviso dizendo isso.
+4. **Conferir o README final** contra a execução definitiva (IDs de recursos da Confluent mudam a cada ciclo; hoje o README mistura IDs do ambiente atual na Camada 1 e do 1º ciclo nas saídas de teardown, de propósito).
+
+**Pendências / dúvidas ABERTAS (não esconder, não afirmar como resolvidas):**
+- **Causa do sumiço do slot de replicação** na 1ª sessão: NÃO identificada. Só se provou que, com `snapshot.mode=when_needed`, o conector se recupera sozinho em ~3 min após o slot ser derrubado.
+- **Tabela `desafio.accounts.versioned` "fantasma"** (DDL `COMPLETED`, mas tabela fora do catálogo do Flink; ocorreu em 2 ciclos). Causa NÃO identificada; o `05-flink.sh` detecta com `SHOW CREATE TABLE`, limpa tópico/subjects e recria. No 3º ciclo funcionou.
+- **Falha de criação do conector** ("failed to connect with Schema Registry" logo após criar as API keys): ocorreu 1 vez, causa provável de propagação, NÃO confirmada. O `04-connector.sh` recria até 3 vezes.
+- **Alertas perdidos no 1º ciclo** quando o `MATCH_RECOGNIZE` rodava sobre `enriched` (cartões 114, 228 e 320): a corrida de partida explica 228 e 320 (contas da 2ª leva), mas NÃO o 114 (conta 114, 1ª leva). Não há dados do 1º ciclo para fechar isso. A hipótese de que o `fraud-detection` também esteja sujeito à corrida NÃO foi reproduzida (a espera nova o protege, mas isso não é prova de que ele falhava).
+- **Tópico `desafio.probe`** apareceu na Metrics API com 0 registros, mas não existe na lista de tópicos; origem não investigada (provável: criado e apagado por `scripts/evidence-foundation.sh`).
+
+**Descobertas técnicas importantes (para não redescobrir):**
+- **Corrida do temporal join:** todas as contas têm `updated_at = 2026-10-01 00:00:00`, então o watermark do lado versionado fica abaixo de qualquer transação e o join só emite quando o `sql.tables.scan.idle-timeout=5s` libera as partições. O populate gravou `accounts.versioned` em 2 levas (~5 s de intervalo, medido por `$rowtime`); o join disparou entre elas e o inner join descartou as transações das contas da 2ª leva (resultado: 1042 de 2000, contas 1..122). Corrigido esperando a CONTAGEM de contas distintas (não o status do populate, que é streaming e nunca termina).
+- **NÃO fazer sem consultar o usuário:** `idle-timeout=0` (deixa o `enriched` vazio), trocar para processing time, join regular, `LATERAL SNAPSHOT`, ou mudar o número de buckets.
+- **Re-rodar o `fraud-detection` duplica alertas** em `desafio.fraud.detected`. Para recriar o `enriched` sem duplicar linhas: apagar o statement, `DROP TABLE` da tabela (apaga tópico e dados), recriar schema + tópico + `ALTER ... MODIFY WATERMARK` (mesmo caminho do `05-flink.sh`) e só então submeter o statement.
+- **Ler resultado no Flink:** a CLI não imprime `SELECT`. Use a API REST (`.../sql/v1/organizations/<org>/environments/<env>/statements/<nome>/results`) com uma Flink API key TEMPORÁRIA (`confluent api-key create --resource flink ...`), sempre apagada ao final. Para contar linhas de um tópico: `/*+ OPTIONS('scan.bounded.mode'='latest-offset') */` e olhar a ÚLTIMA linha do `COUNT` (é um fluxo de atualizações).
+- **Falhas de propagação** (cluster/role binding/API key recém-criados) são o padrão: use `retry` generoso e confira o status real, não confie em "COMPLETED" ou em mensagens de sucesso dos scripts sem medir.
+- **Armadilhas do ambiente:** a ferramenta de escrita bloqueia gravar fora do workspace (use `.bob/tmp/`, que está no `.gitignore`); `lib.sh` liga `set -e` (em scripts de depuração use `set +e`); aspas aninhadas em `bash -c` quebram comandos longos (prefira um arquivo de script).
+- **`enriched` não é consumido por ninguém** hoje (saída analítica). A regra de fraude lê `desafio.public.transactions` direto (MATCH_RECOGNIZE antes do join).
+
+**Arquivos tocados na revalidação (2026-11-23):** `scripts/01-foundation.sh` (retry de ACL 6→36), `scripts/03-schemas.sh` (retry nas tags), `scripts/04-connector.sh` (status no JSON certo, recriação em falha de criação), `scripts/05-flink.sh` (DDLs verificados, tabela fantasma, `wait_accounts_versioned`, status dos statements), `scripts/evidence-cdc.sh` (tombstone), `connectors/cdc.json` (`snapshot.mode=when_needed`).
 
 ## Visão geral
 
@@ -260,7 +287,7 @@ evidencias/ # saídas capturadas (envelopes CDC, alertas, listas vazias)
 ### 11. Revalidação do `setup.sh` do zero (2026-11-23, tarde)
 - **Status:** `[x] done`
 - **Motivo:** o conector estava `FAILED` na primeira sessão; o usuário não queria subir nem gravar nada quebrado.
-- **Falhas achadas e corrigidas** (detalhe e saídas no README, seção "Problemas encontrados e corrigidos"): retry de ACL curto demais (`01-foundation.sh`); tag PII/PCI antes da propagação do `DataSteward` (`03-schemas.sh`); status do conector lido no JSON errado e sem recriação em falha de criação (`04-connector.sh`); DDLs Flink que engoliam erros e script que declarava sucesso com statements `FAILED`; tabela `desafio.accounts.versioned` criada mas ausente do catálogo Flink, com limpeza e recriação automáticas (`05-flink.sh`); tombstone não capturado (`evidence-cdc.sh`).
+- **Falhas achadas e corrigidas (6)** (detalhe e saídas no README, seção "Problemas encontrados e corrigidos"): retry de ACL curto demais (`01-foundation.sh`); tag PII/PCI antes da propagação do `DataSteward` (`03-schemas.sh`); status do conector lido no JSON errado e sem recriação em falha de criação (`04-connector.sh`); DDLs Flink que engoliam erros e script que declarava sucesso com statements `FAILED`; tabela `desafio.accounts.versioned` criada mas ausente do catálogo Flink, com limpeza e recriação automáticas (`05-flink.sh`); tombstone não capturado (`evidence-cdc.sh`).
 - **Recuperação do conector:** `snapshot.mode=when_needed` em `connectors/cdc.json`. Testado derrubando o slot com o conector ligado: `FAILED` por ~2,5 min e depois `RUNNING` sozinho (3 min). Causa do sumiço original do slot: NÃO identificada.
 - **Verificado com saída real:** `setup.sh` exit=0; conector `RUNNING`; 3 statements `RUNNING`; 6 alertas (cartões 100, 114, 228, 245, 260, 320) e nenhum para 126 e 86; consumo pelo `desafio-consumer` e escrita negada (`Topic authorization failed`); envelopes `c`, `u`, `d` e tombstone. Contagem do seed: 2000 transações (as 3 linhas extras do ciclo anterior sumiram com o `db/apply.sh`).
 - **Atenção:** o 2º ciclo de teardown+setup (para provar reprodutibilidade) foi feito com os scripts já corrigidos, mas o último `setup.sh` completo (exit=0) rodou sobre um ambiente em que `05-flink.sh` já tinha sido executado à mão, portanto não é uma subida 100% limpa de ponta a ponta numa única execução.
