@@ -463,13 +463,13 @@ Consumo real medido com `confluent billing cost list --start-date 2026-11-01 --e
 
 | Item | Consumo bruto | % do total |
 |---|---|---|
-| Flink (CFU-hora) — `desafio-pool` | US$ 92.90 | 49.4% |
-| Conector CDC (task-hora) — `desafio-cdc` | US$ 72.00 | 38.3% |
-| Cluster Kafka Basic (CKU-hora) — `desafio-basic` | US$ 23.09 | 12.3% |
+| Flink (CFU-hora) — `desafio-pool` | US$ 93.53 | 49.4% |
+| Conector CDC (task-hora) — `desafio-cdc` | US$ 72.50 | 38.3% |
+| Cluster Kafka Basic (CKU-hora) — `desafio-basic` | US$ 23.22 | 12.3% |
 | Rede (escrita) | US$ 0.07 | 0.0% |
 | Rede (leitura) | US$ 0.02 | 0.0% |
-| **Total bruto** | **US$ 188.07** | 100% |
-| Crédito promocional `FREETRIAL400` | US$ -188.07 | |
+| **Total bruto** | **US$ 189.33** | 100% |
+| Crédito promocional `FREETRIAL400` | US$ -189.33 | |
 | **Líquido cobrado no cartão** | **US$ 0.00** | |
 
 *O que gera custo é o tempo ligado, não o volume de dados: tráfego de rede somou centavos. Flink e conector respondem por cerca de 88% do total e cobram por hora enquanto existirem, com ou sem mensagens. O ritmo com tudo ligado ficou em torno de US$ 30 a 35 por dia.*
@@ -508,7 +508,7 @@ Consumo real medido com `confluent billing cost list --start-date 2026-11-01 --e
 
 ## Custo total e teardown
 
-**Custo declarado:** consumo bruto de **US$ 188.07** no período 2026-11-16 a 2026-11-24, **totalmente coberto** pelo crédito promocional `FREETRIAL400` (US$ -188.07), ou seja, **US$ 0.00 cobrados no cartão**. Detalhamento por item no pilar ③ acima. O valor cresce enquanto o ambiente estiver ligado: o número final é o da última consulta feita **depois** do `./teardown.sh`, porque o billing da Confluent tem defasagem.
+**Custo declarado:** consumo bruto de **US$ 189.33** no período 2026-11-16 a 2026-11-24, **totalmente coberto** pelo crédito promocional `FREETRIAL400` (US$ -189.33), ou seja, **US$ 0.00 cobrados no cartão**. Detalhamento por item no pilar ③ acima. O valor só cresceria com o ambiente ligado; este é o valor da consulta feita **depois** do `./teardown.sh` (2026-11-23, `./scripts/cost.sh 2026-11-01 2026-11-24`), somando as linhas do `confluent billing cost list -o json`: Flink 93.53 + conector 72.50 + cluster 23.22 + rede 0.085 = 189.33, contra créditos de -189.33 (líquido US$ 0.00). Como o billing tem defasagem, a última linha diária (2026-11-23) pode ainda receber ajustes; o ambiente já não existe, então nada novo é gerado.
 
 ```bash
 $ ./scripts/cost.sh    # confluent billing cost list --start-date ... --end-date ...
@@ -516,18 +516,85 @@ $ ./scripts/cost.sh    # confluent billing cost list --start-date ... --end-date
 
 ### Verificação de Listas Vazias pós-Teardown
 
-Ao rodar `./teardown.sh --yes`, todos os recursos com o prefixo `desafio-` são destruídos na ordem reversa de dependência, garantindo custo residual zero. Saída de verificação:
+Saída real de `./teardown.sh` (executado em 2026-11-23 com o conector `desafio-cdc` em `FAILED` — o slot de replicação já havia sumido no Postgres — depois de `./teardown.sh --dry-run`). Ordem reversa de dependência; `None found.` nas listas de conectores e statements Flink, só o environment `default` restante e nenhuma service account:
 
 ```
-== Verificação final (nada com o prefixo 'desafio' restante)
+== O que será apagado
+   environment : env-6nj08j (desafio-final)
+   cluster     : lkc-yow5gwo (desafio-basic)
+   Sch.Registry: lsrc-w7w0zw5 (some junto com o environment)
+   conectores  : lcc-q2wnnv6
+   flink stmts : tmp-desc-21970
+tmp-desc-25547
+tmp-desc-956
+tmp-q-303846252
+tmp-q-1640715298
+desafio-accounts-populate
+desafio-enrichment
+desafio-fraud-detection
+   flink pools : lfcp-w7wpx0g
+   service acc.:  sa-7p15z9p sa-o27kynx
+   slot Neon   : slots 'desafio%' inativos
+   .state local: será removido (as API keys morrem junto)
+
+(confirmação "apagar" via stdin)
+>> 1/8 conectores
+   ok: confluent connect cluster delete lcc-q2wnnv6 --cluster lkc-yow5gwo --environment env-6nj08j --force
+>> 2/8 Flink statements e compute pool
+   ok: confluent flink statement delete tmp-desc-21970 --cloud aws --region us-east-1 --environment env-6nj08j --force
+   ok: confluent flink statement delete tmp-desc-25547 --cloud aws --region us-east-1 --environment env-6nj08j --force
+   ok: confluent flink statement delete tmp-desc-956 --cloud aws --region us-east-1 --environment env-6nj08j --force
+   ok: confluent flink statement delete tmp-q-303846252 --cloud aws --region us-east-1 --environment env-6nj08j --force
+   ok: confluent flink statement delete tmp-q-1640715298 --cloud aws --region us-east-1 --environment env-6nj08j --force
+   ok: confluent flink statement delete desafio-accounts-populate --cloud aws --region us-east-1 --environment env-6nj08j --force
+   ok: confluent flink statement delete desafio-enrichment --cloud aws --region us-east-1 --environment env-6nj08j --force
+   ok: confluent flink statement delete desafio-fraud-detection --cloud aws --region us-east-1 --environment env-6nj08j --force
+   ok: confluent flink compute-pool delete lfcp-w7wpx0g --environment env-6nj08j --force
+   -- verificação (esperado: None found.)
+   connect cluster list:
+     None found.
+   flink statement list:
+     None found.
+>> 3/8 role bindings do Schema Registry
+   ok: confluent iam rbac role-binding delete --principal User:sa-7p15z9p --role DeveloperWrite --environment env-6nj08j --schema-registry-cluster lsrc-w7w0zw5 --resource Subject:desafio --prefix --force
+   ok: confluent iam rbac role-binding delete --principal User:sa-7p15z9p --role DeveloperRead --environment env-6nj08j --schema-registry-cluster lsrc-w7w0zw5 --resource Subject:desafio --prefix --force
+   ok: confluent iam rbac role-binding delete --principal User:sa-o27kynx --role DeveloperRead --environment env-6nj08j --schema-registry-cluster lsrc-w7w0zw5 --resource Subject:desafio --prefix --force
+   ok: confluent iam rbac role-binding delete --principal User:sa-7p15z9p --role DataSteward --environment env-6nj08j --force
+>> 4/8 API keys
+   ok: confluent api-key delete O2ILJ2HWWSESPKSI --force
+   ok: confluent api-key delete ZHNOYEEVFTZ47LCW --force
+   ok: confluent api-key delete J2ZZZNGLBLJP2JSD --force
+   ok: confluent api-key delete UN5DOIUPSVM2GQBC --force
+>> 5/8 cluster Kafka
+   ok: confluent kafka cluster delete lkc-yow5gwo --environment env-6nj08j --force
+>> 6/8 service accounts
+   ok: confluent iam service-account delete sa-7p15z9p --force
+   ok: confluent iam service-account delete sa-o27kynx --force
+>> 7/8 environment
+   ok: confluent environment delete env-6nj08j --force
+>> 8/8 slot de replicação no Postgres
+   slots 'desafio%' restantes: 0
+
+== Verificação final (nada com o prefixo 'desafio-' deve restar)
 -- confluent environment list
-     ID     |      Name       | Stream Governance Package
-------------+-----------------+----------------------------
-  env-default | default       | essentials
-
+     Current |     ID     |  Name   | Stream Governance Package  
+   ----------+------------+---------+----------------------------
+             | env-2kpg72 | default | ESSENTIALS                 
 -- confluent iam service-account list
-     ID     |        Name        | Description
-------------+--------------------+--------------
+   None found.
 
--- slots de replicação Neon restantes: 0
+Pronto. Para retomar: ./setup.sh
+```
+
+Conferência posterior com `./scripts/status.sh` (somente leitura):
+
+```
+== Confluent Cloud
+   environment desafio-final : NÃO EXISTE  -> nada gerando custo na Confluent
+   service accounts  : nenhuma
+== Estado local
+   .state ausente (setup ainda não rodou, ou o teardown já apagou)
+== Neon (Postgres de origem)
+   transactions: 2003
+   nenhum slot de replicação 'desafio%'
 ```

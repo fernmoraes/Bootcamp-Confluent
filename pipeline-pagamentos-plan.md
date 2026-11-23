@@ -26,6 +26,9 @@
 > | 7 Operação (métricas, acesso, custo, confiabilidade) | feito |
 > | 8 setup/teardown (automação completa) | feito |
 > | 9 README final com evidências reais | feito |
+| 10 Encerramento (teardown + custo final) | feito em 2026-11-23: teardown executado, nada na Confluent; custo final US$ 189.33 bruto / US$ 0.00 líquido |
+>
+> **Estado atual (2026-11-23): TUDO DERRUBADO na Confluent Cloud (`./scripts/status.sh` → "environment desafio-final : NÃO EXISTE"). Neon mantido (2003 transações, sem slot). Para retomar: `./setup.sh`.**
 >
 > **Ambiente real em uso (IDs; segredos NÃO ficam aqui):** Neon projeto `late-lake-61849025` (us-east-1, org `org-round-wildflower-93544253`); Confluent org `ibm`, crédito `FREETRIAL400`. Os IDs da Confluent (`env-…`, `lkc-…`, `lsrc-…`, `sa-…`) mudam a cada teardown + setup: use `.state` ou `./scripts/status.sh`, não os valores escritos nas notas abaixo (são do primeiro ciclo).
 
@@ -221,7 +224,7 @@ evidencias/ # saídas capturadas (envelopes CDC, alertas, listas vazias)
   - Criados `scripts/metrics.sh`, `scripts/cost.sh` e `scripts/07-operation.sh`.
   - Observabilidade: Confluent Telemetry Metrics API consultada com sucesso (janela 2026-11-16 a 11-23 via `METRICS_START`: pico `received_bytes` 1.084.678 B; `sent_bytes` 7.019.047 B; `retained_bytes` 1.666.322 B). Lag por grupo NÃO medido: grupos efêmeros, a CLI devolve `None found`.
   - Segurança: Matriz completa de SAs, ACLs Kafka, RBAC de Schema Registry/DataSteward e permissões mínimas no Postgres.
-  - Custos: Faturamento medido via `confluent billing cost list`: consumo BRUTO de US$ 188.07 (2026-11-16 a 11-24; Flink 92.90, conector 72.00, cluster 23.09, rede ~0.09), coberto pelo crédito `FREETRIAL400` (líquido US$ 0.00). O valor cresce enquanto o ambiente estiver ligado: reconsultar DEPOIS do teardown. Alavancas: (1) teardown entre sessões; (2) Flink no menor pool e sem statements sem consumidor.
+  - Custos: Faturamento medido via `confluent billing cost list`: consumo BRUTO FINAL de US$ 189.33 (consulta DEPOIS do teardown, 2026-11-01 a 11-24; Flink 93.53, conector 72.50, cluster 23.22, rede ~0.085), coberto pelo crédito `FREETRIAL400` (-189.33; líquido US$ 0.00). (Valor anterior, com o ambiente ligado: 188.07.) Alavancas: (1) teardown entre sessões; (2) Flink no menor pool e sem statements sem consumidor.
   - Confiabilidade: Matriz trecho a trecho detalhando tolerâncias a falhas e o elo fraco na aplicação consumidora (mitigação via idempotência).
   - Evidência real salva em `evidencias/06-operacao.txt`.
 
@@ -243,3 +246,12 @@ evidencias/ # saídas capturadas (envelopes CDC, alertas, listas vazias)
 ## Ordem sugerida
 
 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9. Cada passo depende da saída do anterior. O teardown (8) deve ser executado no fim de cada sessão de teste para limitar o custo.
+
+### 10. Encerramento (2026-11-23)
+- **Status:** `[x] done`
+- **Notas:**
+  - **Estado encontrado:** conector `desafio-cdc` (`lcc-q2wnnv6`) `FAILED` (task 0 `USER_ACTIONABLE_ERROR`: posição de log armazenada indisponível no servidor, slot recriado/WAL descartado) e nenhum slot `desafio%` no Neon. Não foi investigada a causa do sumiço do slot.
+  - **Decisão (vídeo vs. teardown):** o PDF só cita o "vídeo-gabarito" como referência do template; não há vídeo entre os itens do entregável. Gravar com o conector em `FAILED` mostraria um pipeline quebrado e custaria ~US$ 30/dia. Escolhido: teardown agora; as evidências já estão em `evidencias/` e no README. Para gravar vídeo no futuro: `./setup.sh` (recria tudo do zero, conector refaz o snapshot) e depois `./teardown.sh`.
+  - **Executado:** `./teardown.sh --dry-run` e `./teardown.sh` (exit 0): conector, 8 statements, pool, role bindings, 4 API keys, cluster, 2 SAs e environment apagados; `None found.` nas listas; slots Neon restantes: 0. Saída real colada no README ("Verificação de Listas Vazias pós-Teardown").
+  - **Custo final:** US$ 189.33 bruto, US$ 0.00 líquido (README e nota da sub-tarefa 7 atualizados). A última linha diária pode sofrer ajuste por defasagem do billing.
+  - **Pendência:** o `.state` foi removido pelo teardown; o README "Como subir" continua válido.
