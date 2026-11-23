@@ -153,6 +153,50 @@ deploy_stmt() {
 }
 
 deploy_stmt "desafio-accounts-populate" "INSERT INTO \`desafio.accounts.versioned\` (account_id, customer_id, account_type, risk_tier, updated_at) SELECT account_id, customer_id, account_type, risk_tier, TO_TIMESTAMP_LTZ(REPLACE(SUBSTRING(updated_at, 1, 19), 'T', ' '), 'yyyy-MM-dd HH:mm:ss', 'UTC') FROM \`desafio.public.accounts\`;"
+# O populate é um statement de streaming e nunca termina: não dá para esperar pelo status dele.
+# O temporal join do enrichment e do fraud-detection precisa encontrar TODAS as contas já em accounts.versioned
+# quando for avaliado. Com sql.tables.scan.idle-timeout=5s, uma pausa de ~5 s entre as levas de gravação do populate
+# faz o join disparar e descartar (inner join) as transações das contas que chegam depois. Por isso esperamos a
+# CONTAGEM de contas distintas chegar ao total da origem antes de subir os statements que fazem o join.
+wait_accounts_versioned() {
+  local timeout="${ACCOUNTS_WAIT_TIMEOUT:-600}" name=desafio-wait-accounts expected n=0 deadline org kj k sec url json page
+  pg_admin_env || die "psql/credenciais PG ausentes: preciso contar as contas na origem para saber quando accounts.versioned está completa."
+  expected="$(psql -X -tA -c 'SELECT count(*) FROM accounts')"
+  [ -n "$expected" ] && [ "$expected" -gt 0 ] 2>/dev/null || die "não consegui contar as contas na origem (Postgres)."
+  org="$(confluent organization describe -o json | jq -r .id)"
+  kj="$(confluent api-key create --resource flink --environment "$ENV_ID" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" \
+        --description "temporaria: espera accounts.versioned" -o json)" || die "não consegui criar a Flink API key temporária."
+  k="$(jq -r .api_key <<<"$kj")"; sec="$(jq -r .api_secret <<<"$kj")"
+  log "aguardando accounts.versioned ter $expected contas distintas (timeout ${timeout}s)"
+  deadline=$(( $(date +%s) + timeout ))
+  while :; do
+    confluent flink statement delete "$name" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" --force >/dev/null 2>&1 || true
+    confluent flink statement create "$name" \
+      --sql "SELECT COUNT(DISTINCT account_id) AS n FROM \`desafio.accounts.versioned\` /*+ OPTIONS('scan.bounded.mode'='latest-offset') */;" \
+      --compute-pool "$POOL_ID" --database "$CLUSTER_ID" --environment "$ENV_ID" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" \
+      --property sql.tables.scan.idle-timeout=5s --wait >/dev/null 2>&1 || true
+    n=0
+    url="https://flink.${CLUSTER_REGION}.${CLUSTER_CLOUD}.confluent.cloud/sql/v1/organizations/${org}/environments/${ENV_ID}/statements/${name}/results"
+    while [ -n "$url" ]; do
+      json="$(curl -s -u "$k:$sec" "$url" || true)"
+      page="$(jq -r '[.results.data[]?.row[0] | tonumber] | max // 0' <<<"$json" 2>/dev/null || echo 0)"
+      [ "${page:-0}" -gt "$n" ] 2>/dev/null && n="$page"
+      url="$(jq -r '.metadata.next // empty' <<<"$json" 2>/dev/null || true)"
+    done
+    log "accounts.versioned: $n/$expected contas distintas"
+    [ "$n" -ge "$expected" ] && break
+    if [ "$(date +%s)" -ge "$deadline" ]; then
+      confluent flink statement delete "$name" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" --force >/dev/null 2>&1 || true
+      confluent api-key delete "$k" --force >/dev/null 2>&1 || true
+      die "accounts.versioned só chegou a $n/$expected contas em ${timeout}s. O desafio-accounts-populate está RUNNING? Não subo o enrichment/fraud para não perder transações no join."
+    fi
+    sleep 15
+  done
+  confluent flink statement delete "$name" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" --force >/dev/null 2>&1 || true
+  confluent api-key delete "$k" --force >/dev/null 2>&1 || true
+}
+wait_accounts_versioned
+
 deploy_stmt "desafio-enrichment"        "$(cat "$ROOT/sql/01-enrichment.sql")"
 deploy_stmt "desafio-fraud-detection"   "$(cat "$ROOT/sql/02-fraud-detection.sql")"
 
