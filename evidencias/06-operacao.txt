@@ -94,48 +94,26 @@ RBAC no Schema Registry (Consumer: desafio-consumer):
 ------------+-----------------+-------+---------------+-------------+---------------+-----------------+-----------------+---------------+---------+---------------
   rb-KPVmgP | User:sa-5mn3dyg |       | DeveloperRead | env-n9oxv6  |               | Schema Registry | lsrc-386v0kj    | Subject       | desafio | PREFIXED      
 
-=== PILAR 3: Custos Reais e Faturamento Confluent Cloud ===
+=== PILAR 3: Custo de um dia com o pipeline ligado (Faturamento Confluent Cloud) ===
+$ ./scripts/cost.sh 2026-11-22 2026-11-23
   Start Date |  End Date  | Granularity |      Line Type      | Product |   Resource   | Resource Name | Environment | Network Access Type |        Price        | Original Amount | Discount Amount |  Amount    
 -------------+------------+-------------+---------------------+---------+--------------+---------------+-------------+---------------------+---------------------+-----------------+-----------------+------------
-  2026-11-16 | 2026-11-17 | DAILY       | PROMO_CREDIT        |         |              |               |             |                     |                     | $0.00           |                 | $0.00      
-  2026-11-16 | 2026-11-17 | DAILY       | PROMO_CREDIT        |         |              |               |             |                     |                     | $0.00           |                 | $0.00      
-  2026-11-17 | 2026-11-18 | DAILY       | CONNECT_NUM_TASKS   | CONNECT | lcc-9kyqqw7  | desafio-cdc   | env-6nj08j  | PUBLIC              | $0.50 USD/Task-hour | $0.50           | $0.00           | $0.50      
-  2026-11-17 | 2026-11-18 | DAILY       | CONNECT_NUM_TASKS   | CONNECT | lcc-q2wnnv6  | desafio-cdc   | env-6nj08j  | PUBLIC              | $0.50 USD/Task-hour | $5.50           | $0.00           | $5.50      
-  2026-11-17 | 2026-11-18 | DAILY       | FLINK_NUM_CFUS      | FLINK   | lfcp-w7wpx0g | desafio-pool  | env-6nj08j  |                     | $0.21 USD/CFU-hour  | $7.819          | $0.00           | $7.819     
-  2026-11-17 | 2026-11-18 | DAILY       | KAFKA_NETWORK_READ  | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.05 USD/GB        | $0.0024         | $0.00           | $0.0024    
-  2026-11-17 | 2026-11-18 | DAILY       | KAFKA_NETWORK_WRITE | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.05 USD/GB        | $0.0085         | $0.00           | $0.0085    
-  2026-11-17 | 2026-11-18 | DAILY       | KAFKA_NUM_CKUS      | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.135 USD/CKU-hour | $3.105          | $0.00           | $3.105     
-  2026-11-17 | 2026-11-18 | DAILY       | PROMO_CREDIT        |         |              |               |             |                     |                     | $-16.9349       |                 | $-16.9349  
-  2026-11-18 | 2026-11-19 | DAILY       | CONNECT_NUM_TASKS   | CONNECT | lcc-q2wnnv6  | desafio-cdc   | env-6nj08j  | PUBLIC              | $0.50 USD/Task-hour | $12.00          | $0.00           | $12.00     
-  2026-11-18 | 2026-11-19 | DAILY       | FLINK_NUM_CFUS      | FLINK   | lfcp-w7wpx0g | desafio-pool  | env-6nj08j  |                     | $0.21 USD/CFU-hour  | $17.003         | $0.00           | $17.003    
-  2026-11-18 | 2026-11-19 | DAILY       | KAFKA_NETWORK_READ  | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.05 USD/GB        | $0.0052         | $0.00           | $0.0052    
-  2026-11-18 | 2026-11-19 | DAILY       | KAFKA_NETWORK_WRITE | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.05 USD/GB        | $0.0162         | $0.00           | $0.0162    
-  2026-11-18 | 2026-11-19 | DAILY       | KAFKA_NUM_CKUS      | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.135 USD/CKU-hour | $5.40           | $0.00           | $5.40      
-  2026-11-18 | 2026-11-19 | DAILY       | PROMO_CREDIT        |         |              |               |             |                     |                     | $-34.4244       |                 | $-34.4244  
-  2026-11-19 | 2026-11-20 | DAILY       | CONNECT_NUM_TASKS   | CONNECT | lcc-q2wnnv6  | desafio-cdc   | env-6nj08j  | PUBLIC              | $0.50 USD/Task-hour | $12.00          | $0.00           | $12.00     
-  2026-11-19 | 2026-11-20 | DAILY       | FLINK_NUM_CFUS      | FLINK   | lfcp-w7wpx0g | desafio-pool  | env-6nj08j  |                     | $0.21 USD/CFU-hour  | $15.155         | $0.00           | $15.155    
-  2026-11-19 | 2026-11-20 | DAILY       | KAFKA_NETWORK_READ  | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.05 USD/GB        | $0.0022         | $0.00           | $0.0022    
-  2026-11-19 | 2026-11-20 | DAILY       | KAFKA_NETWORK_WRITE | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.05 USD/GB        | $0.0094         | $0.00           | $0.0094    
-  2026-11-19 | 2026-11-20 | DAILY       | KAFKA_NUM_CKUS      | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.135 USD/CKU-hour | $3.24           | $0.00           | $3.24      
-  2026-11-19 | 2026-11-20 | DAILY       | PROMO_CREDIT        |         |              |               |             |                     |                     | $-30.4066       |                 | $-30.4066  
-  2026-11-20 | 2026-11-21 | DAILY       | CONNECT_NUM_TASKS   | CONNECT | lcc-q2wnnv6  | desafio-cdc   | env-6nj08j  | PUBLIC              | $0.50 USD/Task-hour | $12.00          | $0.00           | $12.00     
-  2026-11-20 | 2026-11-21 | DAILY       | FLINK_NUM_CFUS      | FLINK   | lfcp-w7wpx0g | desafio-pool  | env-6nj08j  |                     | $0.21 USD/CFU-hour  | $15.12          | $0.00           | $15.12     
-  2026-11-20 | 2026-11-21 | DAILY       | KAFKA_NETWORK_READ  | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.05 USD/GB        | $0.002          | $0.00           | $0.002     
-  2026-11-20 | 2026-11-21 | DAILY       | KAFKA_NETWORK_WRITE | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.05 USD/GB        | $0.0095         | $0.00           | $0.0095    
-  2026-11-20 | 2026-11-21 | DAILY       | KAFKA_NUM_CKUS      | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.135 USD/CKU-hour | $3.24           | $0.00           | $3.24      
-  2026-11-20 | 2026-11-21 | DAILY       | PROMO_CREDIT        |         |              |               |             |                     |                     | $-30.3715       |                 | $-30.3715  
-  2026-11-21 | 2026-11-22 | DAILY       | CONNECT_NUM_TASKS   | CONNECT | lcc-q2wnnv6  | desafio-cdc   | env-6nj08j  | PUBLIC              | $0.50 USD/Task-hour | $12.00          | $0.00           | $12.00     
-  2026-11-21 | 2026-11-22 | DAILY       | FLINK_NUM_CFUS      | FLINK   | lfcp-w7wpx0g | desafio-pool  | env-6nj08j  |                     | $0.21 USD/CFU-hour  | $15.12          | $0.00           | $15.12     
-  2026-11-21 | 2026-11-22 | DAILY       | KAFKA_NETWORK_READ  | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.05 USD/GB        | $0.002          | $0.00           | $0.002     
-  2026-11-21 | 2026-11-22 | DAILY       | KAFKA_NETWORK_WRITE | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.05 USD/GB        | $0.0095         | $0.00           | $0.0095    
-  2026-11-21 | 2026-11-22 | DAILY       | KAFKA_NUM_CKUS      | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.135 USD/CKU-hour | $3.24           | $0.00           | $3.24      
-  2026-11-21 | 2026-11-22 | DAILY       | PROMO_CREDIT        |         |              |               |             |                     |                     | $-30.3715       |                 | $-30.3715  
   2026-11-22 | 2026-11-23 | DAILY       | CONNECT_NUM_TASKS   | CONNECT | lcc-q2wnnv6  | desafio-cdc   | env-6nj08j  | PUBLIC              | $0.50 USD/Task-hour | $12.00          | $0.00           | $12.00     
   2026-11-22 | 2026-11-23 | DAILY       | FLINK_NUM_CFUS      | FLINK   | lfcp-w7wpx0g | desafio-pool  | env-6nj08j  |                     | $0.21 USD/CFU-hour  | $15.12          | $0.00           | $15.12     
   2026-11-22 | 2026-11-23 | DAILY       | KAFKA_NETWORK_READ  | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.05 USD/GB        | $0.002          | $0.00           | $0.002     
   2026-11-22 | 2026-11-23 | DAILY       | KAFKA_NETWORK_WRITE | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.05 USD/GB        | $0.0095         | $0.00           | $0.0095    
   2026-11-22 | 2026-11-23 | DAILY       | KAFKA_NUM_CKUS      | KAFKA   | lkc-yow5gwo  | desafio-basic | env-6nj08j  | INTERNET            | $0.135 USD/CKU-hour | $3.24           | $0.00           | $3.24      
   2026-11-22 | 2026-11-23 | DAILY       | PROMO_CREDIT        |         |              |               |             |                     |                     | $-30.3715       |                 | $-30.3715  
+
+Soma do dia (US$), calculada com awk sobre a saída acima:
+CONNECT_NUM_TASKS        12.0000
+FLINK_NUM_CFUS           15.1200
+KAFKA_NETWORK_READ        0.0020
+KAFKA_NETWORK_WRITE       0.0095
+KAFKA_NUM_CKUS            3.2400
+bruto_do_dia=30.3715
+credito_do_dia=-30.3715
+liquido_do_dia=-0.0000
 
 === PILAR 4: Confiabilidade Fim a Fim e Idempotência ===
 Análise de Garantias por Trecho:

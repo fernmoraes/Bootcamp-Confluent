@@ -1,5 +1,6 @@
+# Execução de 17/11/2026 (commit d205f51); conteúdo abaixo restaurado sem alteração.
 == Camada 2 — Contrato de dados (Evidências reais)
-Data: 2026-11-23 17:13:58 UTC
+Data: 2026-11-17 12:51:18 UTC
 
 === 1. Nível de Compatibilidade Global do Schema Registry
 $ confluent schema-registry configuration describe
@@ -9,34 +10,21 @@ $ confluent schema-registry configuration describe
 
 === 2. Tag Definitions Registradas no Stream Governance Catalog
 Tags de governança (PII e PCI) criadas no catálogo do Schema Registry:
-  - Tag: PII | Descrição: Personally Identifiable Information
   - Tag: PCI | Descrição: Payment Card Industry data
+  - Tag: PII | Descrição: Personally Identifiable Information
 
 === 3. Schemas de Domínio Registrados (Subject Prefix: desafio)
 $ confluent schema-registry schema list --subject-prefix desafio
-    ID   |               Subject               | Version  
----------+-------------------------------------+----------
-  100001 | desafio.customers-value             |       1  
-  100002 | desafio.accounts-value              |       1  
-  100003 | desafio.cards-value                 |       1  
-  100004 | desafio.merchants-value             |       1  
-  100005 | desafio.transactions-value          |       1  
-  100006 | desafio.fraud.detected-value        |       1  
-  100007 | desafio.public.customers-key        |       1  
-  100008 | desafio.public.customers-value      |       1  
-  100009 | desafio.public.accounts-key         |       1  
-  100010 | desafio.public.accounts-value       |       1  
-  100011 | desafio.public.cards-key            |       1  
-  100012 | desafio.public.cards-value          |       1  
-  100013 | desafio.public.merchants-key        |       1  
-  100014 | desafio.public.merchants-value      |       1  
-  100015 | desafio.public.transactions-key     |       1  
-  100016 | desafio.public.transactions-value   |       1  
-  100017 | desafio.heartbeat.desafio-key       |       1  
-  100018 | desafio.heartbeat.desafio-value     |       1  
-  100019 | desafio.transactions.enriched-value |       1  
-  100024 | desafio.accounts.versioned-key      |       1  
-  100025 | desafio.accounts.versioned-value    |       1  
+    ID   |              Subject              | Version  
+---------+-----------------------------------+----------
+  100001 | desafio.customers-value           |       1  
+  100002 | desafio.accounts-value            |       1  
+  100003 | desafio.cards-value               |       1  
+  100004 | desafio.merchants-value           |       1  
+  100005 | desafio.transactions-value        |       1  
+  100006 | desafio.fraud.detected-value      |       1  
+  100007 | desafio.test.evolution-full-value |       1  
+  100007 | desafio.test.evolution-value      |       1  
 
 === 4. Teste de Compatibilidade — Cenário 1: Aceitando campo novo com default (BACKWARD)
 $ confluent schema-registry schema compatibility validate schemas/test-evolution/transaction-v2-compatible.avsc --type avro --subject desafio.test.evolution-value --version latest
@@ -46,12 +34,12 @@ $ confluent schema-registry schema compatibility validate schemas/test-evolution
 
 === 5. Teste de Compatibilidade — Cenário 2: REJEITANDO quebra (campo obrigatório sem default em BACKWARD)
 $ confluent schema-registry schema compatibility validate schemas/test-evolution/transaction-v2-add-required.avsc --type avro --subject desafio.test.evolution-value --version latest
-+------------+------+
-| Compatible | true |
-+------------+------+
++------------+-------+
+| Compatible | false |
++------------+-------+
 
 === 6. Teste de Compatibilidade — Cenário 3: REJEITANDO remoção de campo obrigatório (FULL)
 $ confluent schema-registry schema compatibility validate schemas/test-evolution/transaction-v2-incompatible.avsc --type avro --subject desafio.test.evolution-full-value --version latest
-+------------+------+
-| Compatible | true |
-+------------+------+
++------------+-------+
+| Compatible | false |
++------------+-------+

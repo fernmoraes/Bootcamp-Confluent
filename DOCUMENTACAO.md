@@ -222,7 +222,7 @@ Arquivo `schemas/transactions-raw.avsc` (namespace `org.apache.flink.avro.genera
 - `PII`: `customers.full_name`, `email`, `phone`, `birth_date`. `PCI`: `cards.card_number_mask`.
 - As tags são declaradas no `.avsc` (`"confluent:tags"`).
 - Compatibilidade global: **BACKWARD**.
-- Teste de evolução (`scripts/test-compat.sh`, `schemas/test-evolution/`):
+- Teste de evolução (`scripts/test-compat.sh`, `schemas/test-evolution/`; evidência da execução de 17/11 em `evidencias/03-contrato-de-dados.txt`):
   - `v2-compatible` (campo novo **com default**) → compatível.
   - `v2-add-required` (campo novo **sem default**) → rejeitado em BACKWARD.
   - `v2-incompatible` (remove `amount`) → rejeitado em FULL.
@@ -395,7 +395,7 @@ Não existe `02-*.sh`: a camada 2 (schemas) roda como `03-schemas.sh`.
 | `00-seed-e-banco.txt` | Seed e estado do Postgres |
 | `01-envelopes-cdc.json` | Envelopes `c`, `u`, `d` e tombstone |
 | `02-fundacao.txt` | Identidades, ACLs, menor privilégio |
-| `03-contrato-de-dados.txt` | Schemas, tags, compatibilidade |
+| `03-contrato-de-dados.txt` | Schemas, tags, compatibilidade (execução de 17/11, commit `d205f51`) |
 | `04-alerta-fraude.txt` | Flink e alertas |
 | `05-consumo.txt` | Consumo autorizado + escrita negada |
 | `06-operacao.txt` | Os 4 pilares (observabilidade, segurança, custo, confiabilidade) |
@@ -405,7 +405,7 @@ Não existe `02-*.sh`: a camada 2 (schemas) roda como `03-schemas.sh`.
 
 ## 13. Custo e operação
 
-- Com tudo ligado: **~US$ 1,3/h** (estimativa do projeto). Cluster Basic + Flink + conector cobram por hora.
+- **Custo de um dia com o pipeline ligado: US$ 30,37** (billing de 22/11, `./scripts/cost.sh 2026-11-22 2026-11-23`), coberto pelo crédito de teste; líquido US$ 0,00. Cluster Basic + Flink + conector cobram por hora. Saída em `evidencias/08-teardown-e-custo.txt`.
 - **Sempre** ao terminar: `./teardown.sh --dry-run` e depois `./teardown.sh`. O Neon e os dados **não** são apagados; o slot `desafio_cdc_slot` é removido (slot órfão retém WAL).
 - Retomar: `./setup.sh` (idempotente).
 - Cuidado: `.state` some no teardown, e as API keys morrem junto.
