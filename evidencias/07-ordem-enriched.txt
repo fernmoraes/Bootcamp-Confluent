@@ -1,4 +1,4 @@
-== Etapa 1: ordem de gravação de desafio.transactions.enriched (medido em 2026-11-23 19:10 UTC)
+== Medição: ordem de gravação de desafio.transactions.enriched (medido em 2026-11-23 19:10 UTC)
 Método: confluent kafka topic consume desafio.transactions.enriched --partition 0 --offset N --print-offset --value-format avro,
 com a identidade desafio-consumer, em 16 leituras paralelas de faixas sobrepostas (a leitura sequencial rodava a ~1,3 linha/s).
 As linhas foram deduplicadas por offset e analisadas por .bob/tmp/analisa-ordem.py (cópia em scripts/ não foi criada: é diagnóstico pontual).

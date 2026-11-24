@@ -1,4 +1,4 @@
-# Sub-tarefa 1 — saída de db/03-verify.sql (seed=42)
+# Camada 0 — saída de db/03-verify.sql (seed=42)
 # seed.py sha256=5e292bef7dd1aacb62deffb0f1ae95e270bff44532606e908be85c50a873b136
 == wal_level
  wal_level 

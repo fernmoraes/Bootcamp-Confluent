@@ -208,8 +208,6 @@ Fato medido que costuma confundir: **não existem tópicos** `desafio.customers`
 
 **D) `desafio.accounts.versioned-{key,value}`** — criados pelo Flink ao executar o `CREATE TABLE`.
 
-Arquivo `schemas/transactions-raw.avsc` (namespace `org.apache.flink.avro.generated.record`): está versionado como referência de formato, mas **nenhum script o usa** (busca em todo o repositório).
-
 ### 7.2 Tipos
 
 - Dinheiro: `bytes` + `logicalType: decimal(15,2)` (sem erro de float).
@@ -262,7 +260,7 @@ AFTER MATCH SKIP PAST LAST ROW
 - Dispara com **3 transações** do mesmo cartão em até 60 s.
 - `txn_count` sai **sempre 3** neste padrão (guloso-mínimo `T{3,}?` + `SKIP PAST LAST ROW`). Uma rajada de 5 gera um alerta de 3 e as 2 restantes não fecham novo padrão.
 - Campos do alerta: `card_id`, `account_id`, `customer_id`, `first_transaction_id`, `last_transaction_id`, `txn_count`, `total_amount`, `window_start`, `window_end`, `rule_name`, `alert_ts`.
-- **Decisão de projeto:** o `MATCH_RECOGNIZE` roda **antes** do join. Rodá-lo sobre o `enriched` perdia alertas (watermark atrás por causa da gravação fora de ordem).
+- **Decisão de projeto:** O `MATCH_RECOGNIZE` roda antes do join, direto nas transações, porque o temporal join grava os resultados fora da ordem de tempo de evento (`evidencias/07-ordem-enriched.txt`).
 
 ### 8.4 Ordem de subida (importa)
 

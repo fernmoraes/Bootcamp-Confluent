@@ -1,4 +1,4 @@
-== Encerramento: teardown definitivo e custo final (evidências reais)
+== Encerramento: teardown definitivo e custo de um dia (evidências reais)
 Data da coleta: 2026-11-24, teardown concluído às 00:34:52 UTC
 
 === 1. ./teardown.sh --dry-run (nada foi alterado)
