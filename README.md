@@ -105,7 +105,7 @@ As 3 transações que o dispararam (consulta real ao Postgres), 22 s entre a pri
 
 Decisões de projeto:
 
-- O `05-flink.sh` espera as 240 contas na tabela versionada antes de subir o join, porque todas as contas têm a mesma data de atualização e o join só avança pelo `idle-timeout`.
+- O `05-flink.sh` espera as 240 contas na tabela versionada antes de subir o join, porque todas as contas têm a mesma data de atualização e o join só avança pelo `idle-timeout`; sem essa espera, transações de contas ainda não carregadas seriam descartadas.
 - A regra de fraude roda sobre as transações e só depois busca a conta, porque o temporal join grava fora da ordem de tempo de evento (`evidencias/07-ordem-enriched.txt`).
 
 **Por que esta peça:** o Flink SQL expressa o padrão de fraude e o join em SQL, sem serviço com estado próprio.
