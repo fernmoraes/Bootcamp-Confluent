@@ -72,11 +72,11 @@ Os três tipos de evento, ciclo `INSERT` → `UPDATE` → `DELETE` (envelopes co
 - `op=u` (UPDATE): `before` e `after` completos, por causa do `REPLICA IDENTITY FULL`.
 - `op=d` (DELETE): `before` presente e `after=null`, seguido de um tombstone (mesma chave, valor nulo).
 
-**Por que esta peça:** o Debezium lê o WAL sem consultar as tabelas, então não pesa no banco operacional.
+**Por que esta peça:** o Debezium lê o WAL sem ficar consultando as tabelas, então não pesa no banco operacional.
 
 ## Camada 4 — Processamento (Flink SQL)
 
-Compute pool `desafio-pool` (`--max-cfu 5`). Statements em `sql/`, executados com `sql.tables.scan.idle-timeout=5s`. A tabela do CDC é ajustada com `changelog.mode='append'` e `txn_time` (de `txn_ts`) como tempo de evento, com watermark de 5 s. Script: `scripts/05-flink.sh`. Evidência: `evidencias/04-alerta-fraude.txt`.
+Compute pool `desafio-pool` (`--max-cfu 5`). Statements em `sql/`, executados com `sql.tables.scan.idle-timeout=5s`. A tabela do CDC é ajustada com `changelog.mode='append'` e `txn_time` (de `txn_ts`) como tempo de evento, com watermark de 5 s. O `desafio-enrichment` faz um temporal join transações ⋈ contas (`FOR SYSTEM_TIME AS OF t.txn_time`), com PK `account_id` no lado versionado (`desafio.accounts.versioned`). Script: `scripts/05-flink.sh`. Evidência: `evidencias/04-alerta-fraude.txt`.
 
 ```
 $ confluent flink statement list
@@ -90,6 +90,8 @@ A regra `RULE_VELOCITY` (`MATCH_RECOGNIZE`, `PATTERN (T{3,}?) WITHIN INTERVAL '6
 ```json
 {"card_id":100,"customer_id":100,"first_transaction_id":1726,"last_transaction_id":1728,"txn_count":3,"total_amount":"4651/10","window_start":"2026-10-26T10:14:04Z","window_end":"2026-10-26T10:14:26Z","rule_name":"RULE_VELOCITY_60S"}
 ```
+
+(total_amount 4651/10 = 465,10: é como a CLI mostra decimal Avro.)
 
 As 3 transações que o dispararam (consulta real ao Postgres), 22 s entre a primeira e a última:
 
@@ -126,8 +128,6 @@ Segurança (SA → ACLs → porquê):
 | `desafio-producer` | `CREATE`, `WRITE`, `DESCRIBE` em `desafio*` e `__debezium-heartbeat*`; `DESCRIBE`, `DESCRIBE_CONFIGS` no cluster | O conector produz eventos e heartbeats |
 | `desafio-consumer` | `READ`, `DESCRIBE` em `desafio*`; `READ` em grupos `desafio-*` | Lê alertas sem poder escrever |
 | `cdc_user` (Postgres) | `LOGIN`, `REPLICATION`, `SELECT` | Lê o WAL sem DDL nem escrita |
-
-Prova: o `desafio-consumer` lê os alertas e, ao tentar escrever, recebe `Topic authorization failed` (`evidencias/05-consumo.txt`).
 
 Confiabilidade trecho a trecho:
 
