@@ -6,7 +6,7 @@ Reproduzível com `./setup.sh` (pré-requisito: `.env` preenchido a partir do `.
 
 ## Camada 1 — Fundação
 
-Environment `desafio-final` e cluster Basic `desafio-basic` (aws/us-east-1), com duas service accounts: `desafio-producer` (escreve em `desafio*`) e `desafio-consumer` (lê `desafio*`). Script: `scripts/01-foundation.sh`. Evidência: `evidencias/02-fundacao.txt`.
+Environment `desafio-final` e cluster Basic `desafio-basic` (aws/us-east-1), com duas service accounts: `desafio-producer` (escreve em `desafio*`) e `desafio-consumer` (lê `desafio*`). A conta pessoal é usada no setup/teardown e para submeter os statements Flink; as aplicações usam as service accounts. Script: `scripts/01-foundation.sh`. Evidência: `evidencias/02-fundacao.txt`.
 
 ```
 $ confluent iam service-account list
@@ -126,6 +126,8 @@ Segurança (SA → ACLs → porquê):
 | `desafio-producer` | `CREATE`, `WRITE`, `DESCRIBE` em `desafio*` e `__debezium-heartbeat*`; `DESCRIBE`, `DESCRIBE_CONFIGS` no cluster | O conector produz eventos e heartbeats |
 | `desafio-consumer` | `READ`, `DESCRIBE` em `desafio*`; `READ` em grupos `desafio-*` | Lê alertas sem poder escrever |
 | `cdc_user` (Postgres) | `LOGIN`, `REPLICATION`, `SELECT` | Lê o WAL sem DDL nem escrita |
+
+Prova: o `desafio-consumer` lê os alertas e, ao tentar escrever, recebe `Topic authorization failed` (`evidencias/05-consumo.txt`).
 
 Confiabilidade trecho a trecho:
 
