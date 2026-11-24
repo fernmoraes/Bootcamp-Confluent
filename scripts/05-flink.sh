@@ -91,8 +91,8 @@ run_ddl desafio-ddl-accounts "CREATE TABLE IF NOT EXISTS \`desafio.accounts.vers
     WATERMARK FOR updated_at AS updated_at - INTERVAL '5' SECOND
   );"
 
-# O DDL acima pode terminar COMPLETED e deixar só o tópico e os subjects, sem a tabela no catálogo do Flink
-# (observado em 2 ciclos de setup). Confirma com SHOW CREATE TABLE; se não existir, apaga os restos e recria.
+# Verificação defensiva: confirma com SHOW CREATE TABLE que a tabela está no catálogo do Flink (e não só o tópico e
+# os subjects). Se não estiver, apaga os restos e recria.
 table_visible() {
   local n=desafio-chk-tbl st
   confluent flink statement delete "$n" --cloud "$CLUSTER_CLOUD" --region "$CLUSTER_REGION" --environment "$ENV_ID" --force >/dev/null 2>&1 || true

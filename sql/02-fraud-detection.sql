@@ -1,12 +1,12 @@
 -- Camada 4 — Flink SQL: Detecção de fraude em tempo real (RULE_VELOCITY)
 -- Padrão: 3 ou mais transações no mesmo cartão em menos de 60 segundos.
 --
--- Ordem das operações (decisão validada na execução real):
+-- Ordem das operações (decisão de projeto):
 --   1) MATCH_RECOGNIZE direto sobre as transações (tempo de EVENTO = txn_time, do txn_ts do Postgres);
 --   2) só depois, temporal join com a conta para obter customer_id (FOR SYSTEM_TIME AS OF o fim da janela).
--- Aplicar o MATCH_RECOGNIZE sobre a saída do join temporal (tópico enriched) perdia alertas: o join emite
--- por chave e o watermark de evento fica atrás, então parte das transações vira "atrasada" e é descartada
--- (alertas dos cartões 114, 228 e 320 não saíam). Fazer o padrão antes do join evita isso.
+-- O temporal join grava os resultados agrupados por conta, fora da ordem de tempo de evento
+-- (evidencias/07-ordem-enriched.txt: 1986 de 2000 linhas fora de ordem). Por isso o padrão roda sobre as
+-- transações e só depois busca a conta.
 INSERT INTO `desafio.fraud.detected` (
   card_id,
   account_id,

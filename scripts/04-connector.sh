@@ -71,7 +71,7 @@ for i in $(seq 1 40); do
     fi
   elif [ "$CONN_STATUS" = "FAILED" ] || [[ "$TASKS_STATUS" == *"FAILED"* ]]; then
     TRACE="$(jq -r '.tasks[]?.msg // .connector.trace // empty' <<<"$STATUS_JSON")"
-    # Falha na CRIAÇÃO costuma ser corrida de propagação (API key/role binding do Schema Registry recém-criados):
+    # A criação logo após criar a API key e o role binding do Schema Registry pode falhar por propagação:
     # apaga e recria até 3 vezes antes de desistir.
     if [ "${CONN_TRIES:-1}" -lt 3 ] && [ "$CONN_CREATED" = 1 ]; then
       export CONN_TRIES=$(( ${CONN_TRIES:-1} + 1 ))

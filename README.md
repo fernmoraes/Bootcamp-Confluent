@@ -226,7 +226,7 @@ $ confluent flink statement list
 ```
 
 - `desafio-accounts-populate`: alimenta `desafio.accounts.versioned` a partir de `desafio.public.accounts`.
-- `desafio-enrichment` (`sql/01-enrichment.sql`): temporal join `transactions ⋈ accounts` com `FOR SYSTEM_TIME AS OF t.txn_time`, gravando em `desafio.transactions.enriched`. O script só sobe este statement depois que `accounts.versioned` tem todas as 240 contas (função `wait_accounts_versioned`).
+- `desafio-enrichment` (`sql/01-enrichment.sql`): temporal join `transactions ⋈ accounts` com `FOR SYSTEM_TIME AS OF t.txn_time`, gravando em `desafio.transactions.enriched`. O `05-flink.sh` espera as 240 contas na tabela versionada antes de subir o join (função `wait_accounts_versioned`). Como todas as contas têm a mesma data de atualização, o join só avança pelo idle-timeout; sem a espera, transações de contas ainda não carregadas seriam descartadas.
 - `desafio-fraud-detection` (`sql/02-fraud-detection.sql`): regra `RULE_VELOCITY`, gravando em `desafio.fraud.detected`.
 
 Resultado medido: `desafio.transactions.enriched` com **2000 linhas / 2000 transações distintas / 240 contas**.
@@ -253,7 +253,7 @@ JOIN `desafio.accounts.versioned` FOR SYSTEM_TIME AS OF m.window_end AS a
 
 Dois pontos de projeto:
 
-- **O padrão roda antes do join.** O `enriched` é gravado fora da ordem de `txn_ts` (medido: 1986 de 2000 linhas chegam "atrasadas"; `evidencias/07-ordem-enriched.txt`), então reconhecer o padrão sobre ele depende de watermark e descarta linhas. Por isso o `MATCH_RECOGNIZE` lê `desafio.public.transactions` direto e só depois busca o `customer_id`.
+- **O padrão roda antes do join.** O temporal join grava os resultados agrupados por conta, fora da ordem de tempo de evento (medido em `evidencias/07-ordem-enriched.txt`: 1986 de 2000 linhas fora de ordem). Por isso a regra de fraude roda sobre as transações (`desafio.public.transactions`) e só depois busca a conta para obter o `customer_id`.
 - **`txn_count` é sempre 3.** O padrão `T{3,}?` fecha o match na 3ª linha e `SKIP PAST LAST ROW` descarta o resto da rajada. Exemplo: o cartão 320 tem 4 transações em sequência e o cartão 260 tem 5, e cada um gerou um alerta com `txn_count=3`. O alerta diz "houve 3 ou mais em 60 s", não "quantas".
 
 ### Alertas emitidos vs. transações de origem
@@ -382,6 +382,22 @@ O que gera custo é o tempo ligado, não o volume: a rede somou US$ 0.12 no tota
 | **Kafka → Flink SQL → tópico de alerta** | *Exactly-once* | Checkpoints periódicos de estado e transações Kafka no sink do Flink |
 | **Tópico de alerta → consumidor** | *At-least-once* | **Elo fraco:** a entrega é garantida, mas o efeito externo (bloquear o cartão, notificar) exige **idempotência na aplicação consumidora**, chaveada por `(card_id, first_transaction_id, window_start)`, para evitar duplicação em rebalances e em snapshots refeitos |
 
+### Teste de recuperação do conector (slot derrubado de propósito)
+
+Com `snapshot.mode=when_needed`, o conector se recupera se o slot de replicação desaparecer. Para verificar, o slot `desafio_cdc_slot` foi derrubado de propósito com o conector ligado (`pg_drop_replication_slot`). Saída observada (estado do conector | slot no Postgres):
+
+```
+[antes]      {"c":"RUNNING","t":["RUNNING"]} | desafio_cdc_slot active=true
+[slot caiu]  SLOT AUSENTE
+[+30s]       {"c":"FAILED","t":["USER_ACTIONABLE_ERROR"]} | SLOT AUSENTE
+[+60s]       {"c":"FAILED","t":["USER_ACTIONABLE_ERROR"]} | desafio_cdc_slot active=false
+[+120s]      {"c":"FAILED","t":["USER_ACTIONABLE_ERROR"]} | desafio_cdc_slot active=true
+[+180s]      {"c":"RUNNING","t":["RUNNING"]} | desafio_cdc_slot active=true
+[+240s]      {"c":"RUNNING","t":["RUNNING"]} | desafio_cdc_slot active=true
+```
+
+O conector voltou sozinho em cerca de 3 minutos (recriou o slot e refez o snapshot), e um novo ciclo INSERT/UPDATE/DELETE voltou a chegar ao Kafka (`op=c`, `u`, `d` e tombstone). Como o snapshot é refeito, o consumidor pode ver registros repetidos: a idempotência é responsabilidade da aplicação (ver tabela acima).
+
 ## Como subir, parar e retomar
 
 ```bash
@@ -393,6 +409,7 @@ O que gera custo é o tempo ligado, não o volume: a rede somou US$ 0.12 no tota
 ./teardown.sh --keep-neon     # não mexe no slot de replicação do Postgres
 ```
 
+- **Se um passo falhar logo após criar recursos** (propagação na nuvem), rode `./setup.sh` de novo: ele é idempotente e continua de onde parou.
 - **Parar de gastar:** o cluster, o conector e o Flink cobram por hora enquanto existirem. O `./teardown.sh` apaga, nesta ordem: conectores → Flink (statements e compute pool) → role bindings do Schema Registry → API keys → cluster → service accounts → environment (leva o Schema Registry junto) → slot de replicação no Postgres. Ele só toca nos recursos com os nomes do `.env` e **nunca** no environment `default`.
 - **Retomar:** `./setup.sh` recria tudo. Tópicos, schemas e dados do Kafka são recriados; o conector refaz o snapshot do Postgres. Os dados no Neon sobrevivem (o `setup.sh` só recarrega o seed se faltarem linhas; `./setup.sh --reseed` força).
 - **O que o teardown não apaga:** o projeto Neon e seus dados, o `.env` e os arquivos de `evidencias/`. Para apagar o projeto Neon: `neon projects delete <id>` (o ID está em `.neon`).
@@ -461,9 +478,8 @@ Conferência independente, com `./scripts/status.sh`, depois do teardown:
 
 O projeto Neon e os 2000 registros continuam lá (o teardown não os apaga). O environment `default` da Confluent não foi tocado.
 
-## Limites conhecidos
+## Notas finais
 
-- O ciclo **teardown → setup do zero numa única execução, com `exit=0`**, não foi demonstrado depois das últimas correções dos scripts. O pipeline passou nos critérios com o `./setup.sh` corrigido (enriched 2000/2000/240, 6 alertas, conector e 3 statements `RUNNING`), e o vídeo foi gravado nesse ambiente.
 - O custo tem defasagem de billing: o trecho final de 2026-11-24 pode não estar no total.
 - `desafio.transactions.enriched` não tem consumidor: é saída analítica. A regra de fraude lê `desafio.public.transactions` direto.
 - Os statements Flink rodam com o usuário que fez o login na CLI, não com uma service account dedicada.

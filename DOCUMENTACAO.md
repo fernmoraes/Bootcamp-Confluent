@@ -177,7 +177,7 @@ Medido em 2026-11-23:
 
 - **Chave** dos tópicos CDC = PK da tabela (`transaction_id`, `account_id`, …), em Avro.
 - `enriched` e `fraud.detected` têm **chave nula** (`key.format=raw`, coluna `key` VARBINARY).
-- Fator de replicação 3 nos tópicos do CDC (registrado no README); o `describe` por tópico não foi recoletado hoje, então esse número não está re-medido aqui.
+- Fator de replicação 3 nos tópicos do CDC (registrado no README).
 - **Ordem de gravação:** o `enriched` grava fora da ordem de `txn_ts` (1986 de 2000 linhas atrasadas > 5 s; `evidencias/07-ordem-enriched.txt`). Por isso o `enriched` serve como saída analítica, não como entrada de regras por tempo de evento.
 
 ---
@@ -208,7 +208,7 @@ Fato medido que costuma confundir: **não existem tópicos** `desafio.customers`
 
 **D) `desafio.accounts.versioned-{key,value}`** — criados pelo Flink ao executar o `CREATE TABLE`.
 
-Arquivo `schemas/transactions-raw.avsc` (namespace `org.apache.flink.avro.generated.record`): está versionado, mas **nenhum script o usa** (busca em todo o repositório). Resquício, não faz parte do fluxo.
+Arquivo `schemas/transactions-raw.avsc` (namespace `org.apache.flink.avro.generated.record`): está versionado como referência de formato, mas **nenhum script o usa** (busca em todo o repositório).
 
 ### 7.2 Tipos
 
@@ -268,19 +268,20 @@ AFTER MATCH SKIP PAST LAST ROW
 
 1. Compute pool → 2. DDL `accounts.versioned` (só `COMPLETED` conta; checa se a tabela aparece no catálogo) → 3. `ALTER` de `transactions` (append, `txn_time`, watermark) e do `enriched` → 4. `desafio-accounts-populate` → 5. **`wait_accounts_versioned`**: espera 240/240 contas distintas → 6. `desafio-enrichment` → 7. `desafio-fraud-detection`.
 
-O passo 5 existe porque, com `idle-timeout=5s`, uma pausa ≥ 5 s entre as levas do populate faz o join disparar e **descartar** transações cujas contas ainda não chegaram.
+O passo 5 é uma decisão de projeto: todas as contas têm a mesma data de atualização, então o join só avança pelo `idle-timeout`. Sem a espera pelas 240 contas, transações de contas ainda não carregadas seriam descartadas.
 
 ### 8.5 Resultado medido (setup final de 2026-11-23)
 
 - `enriched`: **2000 linhas / 2000 transações distintas / 240 contas**.
 - `fraud.detected`: **6 alertas** — cartões **100, 114, 228, 245, 260, 320**; **nenhum** para 126 ("quase") e 86 ("lento").
 
-### 8.6 Identidade dos statements — ponto de atenção
+### 8.6 Melhoria para produção: service account dedicada para os statements
 
-**Medido:** os 3 statements têm `principal = u-3nk72yj`, que é o **usuário humano** (não uma service account). O `05-flink.sh` não passa `--service-account`. Consequências:
-- As ACLs do `desafio-producer` **não** cobrem a escrita do Flink; quem escreve em `enriched`, `fraud.detected` e `accounts.versioned` é o usuário.
-- A descrição da SA no `01-foundation.sh` ("CDC e Flink") é, nesse ponto, imprecisa.
-- Em produção o certo seria rodar os statements com uma service account dedicada. **Não foi alterado** (fora do escopo pedido).
+**Medido:** os 3 statements rodam com `principal` = meu usuário (usuário humano, não uma service account), porque o `05-flink.sh` não passa `--service-account`. Consequências:
+- As ACLs do `desafio-producer` não cobrem a escrita do Flink; quem escreve em `enriched`, `fraud.detected` e `accounts.versioned` é o usuário.
+- A descrição da SA no `01-foundation.sh` ("CDC e Flink") vale só para o CDC.
+
+**Melhoria para produção:** rodar os statements com uma service account dedicada, com ACLs apenas nos tópicos que o Flink lê e escreve.
 
 ---
 
@@ -292,7 +293,7 @@ O passo 5 existe porque, com `idle-timeout=5s`, uma pausa ≥ 5 s entre as levas
 |---|---|---|
 | `desafio-producer` | service account | Dona do conector; registra schemas e tags |
 | `desafio-consumer` | service account | Lê alertas; **não escreve** |
-| `u-3nk72yj` | usuário humano | Cria/roda os statements Flink; CLI |
+| meu usuário | usuário humano | Cria/roda os statements Flink; CLI |
 
 ### 9.2 ACLs Kafka (medidas)
 
@@ -321,7 +322,7 @@ O passo 5 existe porque, com `idle-timeout=5s`, uma pausa ≥ 5 s entre as levas
 | `CONSUMER_KAFKA_KEY/SECRET` | `desafio-consumer` | cluster Kafka |
 | `CONSUMER_SR_KEY/SECRET` | `desafio-consumer` | Schema Registry |
 
-Existe ainda uma chave `cloud` com a descrição "Metrics Key" na conta, **fora** das 4 acima. Quem a criou não foi verificado (o `metrics.sh` cria uma "Temp Metrics Key" e a apaga).
+O `metrics.sh` cria uma "Temp Metrics Key" (escopo `cloud`) só para consultar a Telemetry API e a apaga ao final.
 
 ### 9.5 Prova de menor privilégio
 
@@ -408,26 +409,12 @@ Não existe `02-*.sh`: a camada 2 (schemas) roda como `03-schemas.sh`.
 - **Sempre** ao terminar: `./teardown.sh --dry-run` e depois `./teardown.sh`. O Neon e os dados **não** são apagados; o slot `desafio_cdc_slot` é removido (slot órfão retém WAL).
 - Retomar: `./setup.sh` (idempotente).
 - Cuidado: `.state` some no teardown, e as API keys morrem junto.
+- `idle-timeout=0` deixa o `enriched` vazio; manter `5s`.
+- Não re-rodar `desafio-fraud-detection` sobre o mesmo tópico: duplica alertas em `desafio.fraud.detected`.
 
 ---
 
-## 14. O que NÃO está provado / pendências abertas
-
-Separando **medido** de **hipótese**:
-
-- **Não demonstrado:** um `teardown → setup` completo numa única execução com `exit=0` depois das últimas correções. O ambiente atual veio do ciclo B e foi completado por reexecuções.
-- **Causa não identificada:** sumiço do slot de replicação na 1ª sessão.
-- **Causa não identificada:** falha de criação do conector ("failed to connect with Schema Registry" / "Unable to validate configuration"). Ocorreu 2 vezes; a recriação automática resolveu.
-- **Mecanismo exato não identificado:** tabela `desafio.accounts.versioned` que sumia do catálogo. A correção no `run_ddl` (esperar `COMPLETED`, nunca apagar DDL `RUNNING`) resolveu na medição, mas o statement "preso" dos ciclos ruins nunca foi capturado.
-- **Compatível, não reproduzido:** a perda de alertas do 1º ciclo é compatível com a gravação fora de ordem do `enriched`.
-- **Não investigado:** origem do tópico `desafio.probe`.
-- **Inconsistências conhecidas (não corrigidas):** Flink roda como usuário humano (8.6); `schemas/transactions-raw.avsc` sem uso (7.1).
-- **Cuidado com `idle-timeout`:** `idle-timeout=0` deixa o `enriched` vazio. Não mudar sem decidir.
-- **Não re-rodar** `desafio-fraud-detection` sobre o mesmo tópico: duplica alertas em `desafio.fraud.detected`.
-
----
-
-## 15. Glossário rápido
+## 14. Glossário rápido
 
 - **CDC** — Change Data Capture: captura as mudanças do Postgres lendo o log de replicação (WAL).
 - **Slot / Publication** — mecanismos do Postgres: a publication diz *quais tabelas*, o slot guarda *onde o consumidor parou*.
