@@ -1,0 +1,155 @@
+== Encerramento: teardown definitivo e custo final (evidências reais)
+Data da coleta: 2026-11-24, teardown concluído às 00:34:52 UTC
+
+=== 1. ./teardown.sh --dry-run (nada foi alterado)
+== O que será apagado (dry-run)
+   environment : env-n9oxv6 (desafio-final)
+   cluster     : lkc-7ymrz1j (desafio-basic)
+   Sch.Registry: lsrc-386v0kj (some junto com o environment)
+   conectores  : lcc-xqwj5zq
+   flink stmts : desafio-accounts-populate
+desafio-enrichment
+desafio-fraud-detection
+i-s-7ff4d8e8-5277-449f-9e08-915b9788f379
+i-s-f4e794fa-c79d-4770-8b02-1351e3cfbbef
+i-s-b89fa88d-5ea6-4abe-88ea-446ad5fd9fa5
+   flink pools : lfcp-0x6qw75
+   service acc.:  sa-wzp0wkg sa-5mn3dyg
+   slot Neon   : slots 'desafio%' inativos
+   .state local: será removido (as API keys morrem junto)
+
+>> 1/8 conectores
+   [dry-run] confluent connect cluster delete lcc-xqwj5zq --cluster lkc-7ymrz1j --environment env-n9oxv6 --force
+>> 2/8 Flink statements e compute pool
+   [dry-run] confluent flink statement delete desafio-accounts-populate --cloud aws --region us-east-1 --environment env-n9oxv6 --force
+   [dry-run] confluent flink statement delete desafio-enrichment --cloud aws --region us-east-1 --environment env-n9oxv6 --force
+   [dry-run] confluent flink statement delete desafio-fraud-detection --cloud aws --region us-east-1 --environment env-n9oxv6 --force
+   [dry-run] confluent flink statement delete i-s-7ff4d8e8-5277-449f-9e08-915b9788f379 --cloud aws --region us-east-1 --environment env-n9oxv6 --force
+   [dry-run] confluent flink statement delete i-s-f4e794fa-c79d-4770-8b02-1351e3cfbbef --cloud aws --region us-east-1 --environment env-n9oxv6 --force
+   [dry-run] confluent flink statement delete i-s-b89fa88d-5ea6-4abe-88ea-446ad5fd9fa5 --cloud aws --region us-east-1 --environment env-n9oxv6 --force
+   [dry-run] confluent flink compute-pool delete lfcp-0x6qw75 --environment env-n9oxv6 --force
+>> 3/8 role bindings do Schema Registry
+   [dry-run] confluent iam rbac role-binding delete --principal User:sa-wzp0wkg --role DeveloperWrite --environment env-n9oxv6 --schema-registry-cluster lsrc-386v0kj --resource Subject:desafio --prefix --force
+   [dry-run] confluent iam rbac role-binding delete --principal User:sa-wzp0wkg --role DeveloperRead --environment env-n9oxv6 --schema-registry-cluster lsrc-386v0kj --resource Subject:desafio --prefix --force
+   [dry-run] confluent iam rbac role-binding delete --principal User:sa-5mn3dyg --role DeveloperRead --environment env-n9oxv6 --schema-registry-cluster lsrc-386v0kj --resource Subject:desafio --prefix --force
+   [dry-run] confluent iam rbac role-binding delete --principal User:sa-wzp0wkg --role DataSteward --environment env-n9oxv6 --force
+>> 4/8 API keys
+   [dry-run] confluent api-key delete <api-key-id> --force
+   [dry-run] confluent api-key delete <api-key-id> --force
+   [dry-run] confluent api-key delete <api-key-id> --force
+   [dry-run] confluent api-key delete <api-key-id> --force
+>> 5/8 cluster Kafka
+   [dry-run] confluent kafka cluster delete lkc-7ymrz1j --environment env-n9oxv6 --force
+>> 6/8 service accounts
+   [dry-run] confluent iam service-account delete sa-wzp0wkg --force
+   [dry-run] confluent iam service-account delete sa-5mn3dyg --force
+>> 7/8 environment
+   [dry-run] confluent environment delete env-n9oxv6 --force
+>> 8/8 slot de replicação no Postgres
+   [dry-run] drop slot desafio_cdc_slot (active=true)
+
+Dry-run concluído: nada foi alterado.
+
+=== 2. ./teardown.sh --yes (exit=0)
+== O que será apagado
+   environment : env-n9oxv6 (desafio-final)
+   cluster     : lkc-7ymrz1j (desafio-basic)
+   Sch.Registry: lsrc-386v0kj (some junto com o environment)
+   conectores  : lcc-xqwj5zq
+   flink stmts : desafio-accounts-populate
+desafio-enrichment
+desafio-fraud-detection
+i-s-7ff4d8e8-5277-449f-9e08-915b9788f379
+i-s-f4e794fa-c79d-4770-8b02-1351e3cfbbef
+i-s-b89fa88d-5ea6-4abe-88ea-446ad5fd9fa5
+   flink pools : lfcp-0x6qw75
+   service acc.:  sa-wzp0wkg sa-5mn3dyg
+   slot Neon   : slots 'desafio%' inativos
+   .state local: será removido (as API keys morrem junto)
+
+>> 1/8 conectores
+   ok: confluent connect cluster delete lcc-xqwj5zq --cluster lkc-7ymrz1j --environment env-n9oxv6 --force
+>> 2/8 Flink statements e compute pool
+   ok: confluent flink statement delete desafio-accounts-populate --cloud aws --region us-east-1 --environment env-n9oxv6 --force
+   ok: confluent flink statement delete desafio-enrichment --cloud aws --region us-east-1 --environment env-n9oxv6 --force
+   ok: confluent flink statement delete desafio-fraud-detection --cloud aws --region us-east-1 --environment env-n9oxv6 --force
+   ok: confluent flink statement delete i-s-7ff4d8e8-5277-449f-9e08-915b9788f379 --cloud aws --region us-east-1 --environment env-n9oxv6 --force
+   ok: confluent flink statement delete i-s-f4e794fa-c79d-4770-8b02-1351e3cfbbef --cloud aws --region us-east-1 --environment env-n9oxv6 --force
+   ok: confluent flink statement delete i-s-b89fa88d-5ea6-4abe-88ea-446ad5fd9fa5 --cloud aws --region us-east-1 --environment env-n9oxv6 --force
+   ok: confluent flink compute-pool delete lfcp-0x6qw75 --environment env-n9oxv6 --force
+   -- verificação (esperado: None found.)
+   connect cluster list:
+     None found.
+   flink statement list:
+     None found.
+>> 3/8 role bindings do Schema Registry
+   ok: confluent iam rbac role-binding delete --principal User:sa-wzp0wkg --role DeveloperWrite --environment env-n9oxv6 --schema-registry-cluster lsrc-386v0kj --resource Subject:desafio --prefix --force
+   ok: confluent iam rbac role-binding delete --principal User:sa-wzp0wkg --role DeveloperRead --environment env-n9oxv6 --schema-registry-cluster lsrc-386v0kj --resource Subject:desafio --prefix --force
+   ok: confluent iam rbac role-binding delete --principal User:sa-5mn3dyg --role DeveloperRead --environment env-n9oxv6 --schema-registry-cluster lsrc-386v0kj --resource Subject:desafio --prefix --force
+   ok: confluent iam rbac role-binding delete --principal User:sa-wzp0wkg --role DataSteward --environment env-n9oxv6 --force
+>> 4/8 API keys
+   ok: confluent api-key delete <api-key-id> --force
+   ok: confluent api-key delete <api-key-id> --force
+   ok: confluent api-key delete <api-key-id> --force
+   ok: confluent api-key delete <api-key-id> --force
+>> 5/8 cluster Kafka
+   ok: confluent kafka cluster delete lkc-7ymrz1j --environment env-n9oxv6 --force
+>> 6/8 service accounts
+   ok: confluent iam service-account delete sa-wzp0wkg --force
+   ok: confluent iam service-account delete sa-5mn3dyg --force
+>> 7/8 environment
+   ok: confluent environment delete env-n9oxv6 --force
+>> 8/8 slot de replicação no Postgres
+   drop slot desafio_cdc_slot
+   slots 'desafio%' restantes: 0
+
+== Verificação final (nada com o prefixo 'desafio-' deve restar)
+-- confluent environment list
+     Current |     ID     |  Name   | Stream Governance Package  
+   ----------+------------+---------+----------------------------
+             | env-2kpg72 | default | ESSENTIALS                 
+-- confluent iam service-account list
+   None found.
+
+Pronto. Para retomar: ./setup.sh
+
+=== 3. ./scripts/status.sh depois do teardown (conferência do estado real)
+== Confluent Cloud
+   environment desafio-final : NÃO EXISTE  -> nada gerando custo na Confluent
+   service accounts  : nenhuma
+== Estado local
+   .state ausente (setup ainda não rodou, ou o teardown já apagou)
+== Neon (Postgres de origem)
+   transactions: 2000
+   nenhum slot de replicação 'desafio%'
+
+=== 4. Custo real: confluent billing cost list --start-date 2026-11-01 --end-date 2026-11-24 -o json
+(68 linhas; somadas por tipo com jq/awk, valores em US$)
+== linhas: 68  | dias: 2026-11-16 a 2026-11-24
+== por tipo (original_amount | amount)
+CONNECT_NUM_TASKS      orig=  80.0000  liq=  80.0000
+FLINK_NUM_CFUS         orig=  97.9090  liq=  97.9090
+KAFKA_NETWORK_READ     orig=   0.0513  liq=   0.0513
+KAFKA_NETWORK_WRITE    orig=   0.0726  liq=   0.0726
+KAFKA_NUM_CKUS         orig=  28.3500  liq=  28.3500
+PROMO_CREDIT           orig=-206.3830  liq=-206.3830
+== totais
+orig_total=-0.0001 liq_total=-0.0001
+== sem PROMO_CREDIT (bruto)
+bruto=206.3829
+== PROMO_CREDIT (amount)
+credito=-206.3830
+== por dia (bruto, sem credito)
+2026-11-17   16.9349
+2026-11-18   34.4244
+2026-11-19   30.4066
+2026-11-20   30.3715
+2026-11-21   30.3715
+2026-11-22   30.3715
+2026-11-23   33.5025
+== por recurso (nome)
+desafio-basic KAFKA_NETWORK_READ                 0.0513
+desafio-basic KAFKA_NETWORK_WRITE                0.0726
+desafio-basic KAFKA_NUM_CKUS                    28.3500
+desafio-cdc CONNECT_NUM_TASKS                   80.0000
+desafio-pool FLINK_NUM_CFUS                     97.9090
